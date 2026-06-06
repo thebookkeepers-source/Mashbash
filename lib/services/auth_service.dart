@@ -1,47 +1,40 @@
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:google_sign_in/google_sign_in.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../firebase_options.dart';
+import '../models/app_models.dart';
 
 class AuthService {
-  AuthService({FirebaseAuth? auth}) : _auth = auth ?? FirebaseAuth.instance;
-  final FirebaseAuth _auth;
+  AuthService({SupabaseClient? client}) : _client = client ?? Supabase.instance.client;
+  final SupabaseClient _client;
 
-  Stream<User?> get authChanges => _auth.authStateChanges();
-  User? get currentUser => _auth.currentUser;
+  Stream<AuthState> get authChanges => _client.auth.onAuthStateChange;
+  User? get currentUser => _client.auth.currentUser;
 
-  String phoneEmail(String phone) => '${phone.replaceAll(RegExp(r'\D'), '')}@phone.mashbash.app';
+  String staffEmail(String phone) => '${phone.replaceAll(RegExp(r'\D'), '')}@staff.mashbash.app';
+  String loginEmail(String identifier) => identifier.contains('@') ? identifier.trim() : staffEmail(identifier);
 
-  Future<UserCredential> signInWithPhonePassword(String phone, String password) =>
-      _auth.signInWithEmailAndPassword(email: phoneEmail(phone), password: password);
+  Future<AuthResponse> signIn(String identifier, String password) => _client.auth.signInWithPassword(email: loginEmail(identifier), password: password);
 
-  Future<UserCredential> registerCustomer(String phone, String password) =>
-      _auth.createUserWithEmailAndPassword(email: phoneEmail(phone), password: password);
+  Future<AuthResponse> registerCustomer({required String email, required String password, required String name, required String phone, required String address}) =>
+      _client.auth.signUp(email: email.trim(), password: password, data: {'name': name, 'phone': phone, 'address': address});
 
-  Future<UserCredential?> signInWithGoogle() async {
-    final account = await GoogleSignIn().signIn();
-    if (account == null) return null;
-    final auth = await account.authentication;
-    return _auth.signInWithCredential(GoogleAuthProvider.credential(accessToken: auth.accessToken, idToken: auth.idToken));
+  Future<bool> signInWithGoogle() => _client.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: 'com.mashbash.app://login-callback',
+        authScreenLaunchMode: LaunchMode.externalApplication,
+      );
+
+  Future<String> createStaffAccount({required String name, required String phone, required String password, required UserRole role, required Map<String, bool> rights}) async {
+    final response = await _client.functions.invoke('create-staff', body: {
+      'action': 'create',
+      'name': name,
+      'phone': phone,
+      'password': password,
+      'role': role.name,
+      'permissions': rights,
+    });
+    if (response.status >= 300 || response.data is! Map) throw Exception('Staff account could not be created.');
+    return (response.data as Map)['id'] as String;
   }
 
-  Future<User> createStaffAccount(String phone, String password) async {
-    final secondary = await Firebase.initializeApp(
-      name: 'staff-${DateTime.now().microsecondsSinceEpoch}',
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-    try {
-      final result = await FirebaseAuth.instanceFor(app: secondary)
-          .createUserWithEmailAndPassword(email: phoneEmail(phone), password: password);
-      return result.user!;
-    } finally {
-      await secondary.delete();
-    }
-  }
-
-  Future<void> signOut() async {
-    await GoogleSignIn().signOut();
-    await _auth.signOut();
-  }
+  Future<void> signOut() => _client.auth.signOut();
 }
