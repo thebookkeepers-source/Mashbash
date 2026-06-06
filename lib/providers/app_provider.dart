@@ -1,21 +1,21 @@
 import 'dart:async';
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/app_models.dart';
 import '../services/auth_service.dart';
-import '../services/firestore_service.dart';
+import '../services/supabase_service.dart';
 
 class AppProvider extends ChangeNotifier {
-  AppProvider({AuthService? auth, FirestoreService? firestore})
+  AppProvider({AuthService? auth, SupabaseService? data})
       : auth = auth ?? AuthService(),
-        firestore = firestore ?? FirestoreService();
+        data = data ?? SupabaseService();
 
   final AuthService auth;
-  final FirestoreService firestore;
-  StreamSubscription<User?>? _authSubscription;
+  final SupabaseService data;
+  StreamSubscription<AuthState>? _authSubscription;
   StreamSubscription<List<Product>>? _productsSubscription;
   StreamSubscription<List<Deal>>? _dealsSubscription;
   StreamSubscription<List<MashOrder>>? _ordersSubscription;
@@ -29,35 +29,28 @@ class AppProvider extends ChangeNotifier {
   bool busy = false;
   String? error;
 
-  List<CartLine> get cartLines => _cart.entries
-      .map((entry) => CartLine(product: products.firstWhere((product) => product.id == entry.key), quantity: entry.value))
-      .toList();
+  List<CartLine> get cartLines => _cart.entries.map((entry) => CartLine(product: products.firstWhere((product) => product.id == entry.key), quantity: entry.value)).toList();
   int get cartCount => _cart.values.fold(0, (sum, quantity) => sum + quantity);
   int get subtotal => cartLines.fold(0, (sum, line) => sum + line.total);
   int get deliveryFee => _cart.isEmpty ? 0 : 120;
 
   Future<void> initialize() async {
-    _authSubscription = auth.authChanges.listen(_loadSession);
-    _productsSubscription = firestore.products().listen((value) {
+    _authSubscription = auth.authChanges.listen((state) => _loadSession(state.session?.user));
+    _productsSubscription = data.products().listen((value) {
       products = value;
       notifyListeners();
     });
-    _dealsSubscription = firestore.deals().listen((value) {
+    _dealsSubscription = data.deals().listen((value) {
       deals = value;
       notifyListeners();
     });
   }
 
-  Future<void> _loadSession(User? firebaseUser) async {
+  Future<void> _loadSession(User? authUser) async {
     await _ordersSubscription?.cancel();
-    user = firebaseUser == null ? null : await firestore.getUser(firebaseUser.uid);
+    user = authUser == null ? null : await data.getUser(authUser.id);
     if (user != null) {
-      try {
-        if (user!.role == UserRole.owner) await firestore.seedMenu();
-      } catch (_) {
-        error = 'The live menu could not be synchronized. Please try again.';
-      }
-      _ordersSubscription = firestore.orders(customerId: user!.role == UserRole.customer ? user!.id : null).listen((value) {
+      _ordersSubscription = data.orders(customerId: user!.role == UserRole.customer ? user!.id : null).listen((value) {
         orders = value;
         notifyListeners();
       });
@@ -76,8 +69,8 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
     try {
       await action();
-    } on FirebaseAuthException catch (exception) {
-      error = exception.message ?? 'Authentication could not be completed.';
+    } on AuthException catch (exception) {
+      error = exception.message;
     } catch (exception) {
       error = exception.toString().replaceFirst('Exception: ', '');
     } finally {
@@ -86,36 +79,22 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> login(String phone, String password) => run(() async {
-        await auth.signInWithPhonePassword(phone, password);
-      });
+  Future<void> login(String identifier, String password) => run(() async => auth.signIn(identifier, password));
+  Future<void> googleLogin() => run(() async => auth.signInWithGoogle());
 
-  Future<void> googleLogin() => run(() async {
-        final credential = await auth.signInWithGoogle();
-        if (credential == null) return;
-        user = await firestore.getUser(credential.user!.uid);
-        notifyListeners();
-      });
-
-  Future<void> register({required String name, required String phone, required String address, required String password}) => run(() async {
-        final credential = await auth.registerCustomer(phone, password);
-        final customer = AppUser(id: credential.user!.uid, name: name, phone: phone, address: address, role: UserRole.customer);
-        await firestore.saveUser(customer);
-        user = customer;
+  Future<void> register({required String email, required String name, required String phone, required String address, required String password}) => run(() async {
+        final response = await auth.registerCustomer(email: email, password: password, name: name, phone: phone, address: address);
+        if (response.user != null && response.session != null) {
+          final customer = AppUser(id: response.user!.id, name: name, phone: phone, address: address, email: email, role: UserRole.customer);
+          await data.saveUser(customer);
+          user = customer;
+        }
       });
 
   Future<void> saveProfile({required String name, required String phone, required String address}) => run(() async {
-        final firebaseUser = auth.currentUser!;
-        final updated = AppUser(
-          id: firebaseUser.uid,
-          name: name,
-          phone: phone,
-          address: address,
-          email: firebaseUser.email ?? '',
-          role: user?.role ?? UserRole.customer,
-          rights: user?.rights ?? const {},
-        );
-        await firestore.saveUser(updated);
+        final authUser = auth.currentUser!;
+        final updated = AppUser(id: authUser.id, name: name, phone: phone, address: address, email: authUser.email ?? '', role: user?.role ?? UserRole.customer, rights: user?.rights ?? const {});
+        await data.saveUser(updated);
         user = updated;
       });
 
@@ -142,14 +121,7 @@ class AppProvider extends ChangeNotifier {
   Future<String?> checkout({required String address, required String phone, required String paymentMethod}) async {
     String? id;
     await run(() async {
-      id = await firestore.placeOrder(
-        user: user!,
-        lines: cartLines,
-        address: address,
-        phone: phone,
-        paymentMethod: paymentMethod,
-        deliveryFee: deliveryFee,
-      );
+      id = await data.placeOrder(user: user!, lines: cartLines, address: address, phone: phone, paymentMethod: paymentMethod, deliveryFee: deliveryFee);
       _cart.clear();
     });
     return id;
