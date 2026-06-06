@@ -29,7 +29,9 @@ class AppProvider extends ChangeNotifier {
   bool busy = false;
   String? error;
 
-  List<CartLine> get cartLines => _cart.entries.map((entry) => CartLine(product: products.firstWhere((product) => product.id == entry.key), quantity: entry.value)).toList();
+  List<CartLine> get cartLines => _cart.entries
+      .map((entry) => CartLine(product: products.firstWhere((product) => product.id == entry.key), quantity: entry.value))
+      .toList();
   int get cartCount => _cart.values.fold(0, (sum, quantity) => sum + quantity);
   int get subtotal => cartLines.fold(0, (sum, line) => sum + line.total);
   int get deliveryFee => _cart.isEmpty ? 0 : 120;
@@ -79,8 +81,13 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> login(String identifier, String password) => run(() async => auth.signIn(identifier, password));
-  Future<void> googleLogin() => run(() async => auth.signInWithGoogle());
+  Future<void> login(String identifier, String password) => run(() async {
+        await auth.signIn(identifier, password);
+      });
+
+  Future<void> googleLogin() => run(() async {
+        await auth.signInWithGoogle();
+      });
 
   Future<void> register({required String email, required String name, required String phone, required String address, required String password}) => run(() async {
         final response = await auth.registerCustomer(email: email, password: password, name: name, phone: phone, address: address);
@@ -93,7 +100,15 @@ class AppProvider extends ChangeNotifier {
 
   Future<void> saveProfile({required String name, required String phone, required String address}) => run(() async {
         final authUser = auth.currentUser!;
-        final updated = AppUser(id: authUser.id, name: name, phone: phone, address: address, email: authUser.email ?? '', role: user?.role ?? UserRole.customer, rights: user?.rights ?? const {});
+        final updated = AppUser(
+          id: authUser.id,
+          name: name,
+          phone: phone,
+          address: address,
+          email: authUser.email ?? '',
+          role: user?.role ?? UserRole.customer,
+          rights: user?.rights ?? const {},
+        );
         await data.saveUser(updated);
         user = updated;
       });
@@ -121,7 +136,14 @@ class AppProvider extends ChangeNotifier {
   Future<String?> checkout({required String address, required String phone, required String paymentMethod}) async {
     String? id;
     await run(() async {
-      id = await data.placeOrder(user: user!, lines: cartLines, address: address, phone: phone, paymentMethod: paymentMethod, deliveryFee: deliveryFee);
+      id = await data.placeOrder(
+        user: user!,
+        lines: cartLines,
+        address: address,
+        phone: phone,
+        paymentMethod: paymentMethod,
+        deliveryFee: deliveryFee,
+      );
       _cart.clear();
     });
     return id;

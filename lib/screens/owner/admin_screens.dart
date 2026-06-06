@@ -195,7 +195,7 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
                             if (nextIndex < OrderStatus.values.length && user.can('updateOrderStatus')) ...[
                               const SizedBox(height: 10),
                               FilledButton.icon(
-                                onPressed: () => context.read<AppProvider>().firestore.updateOrderStatus(order.id, OrderStatus.values[nextIndex]),
+                                onPressed: () => context.read<AppProvider>().data.updateOrderStatus(order.id, OrderStatus.values[nextIndex]),
                                 icon: const Icon(Icons.arrow_forward_rounded),
                                 label: Text('Mark ${statusLabel(OrderStatus.values[nextIndex])}'),
                               ),
@@ -220,7 +220,7 @@ class MenuManagementScreen extends StatelessWidget {
     final products = context.watch<AppProvider>().products;
     return Scaffold(
       body: products.isEmpty
-          ? const EmptyState(icon: Icons.restaurant_menu_rounded, title: 'Menu is loading', message: 'The complete Mashbash menu will appear after Firebase connects.')
+          ? const EmptyState(icon: Icons.restaurant_menu_rounded, title: 'Menu is loading', message: 'The complete Mashbash menu will appear after Supabase connects.')
           : ListView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: products.length,
@@ -234,8 +234,8 @@ class MenuManagementScreen extends StatelessWidget {
                     trailing: PopupMenuButton<String>(
                       onSelected: (action) {
                         if (action == 'edit') showDialog(context: context, builder: (_) => ProductEditor(product: product));
-                        if (action == 'toggle') context.read<AppProvider>().firestore.saveProduct(Product(id: product.id, name: product.name, category: product.category, description: product.description, price: product.price, imageUrl: product.imageUrl, available: !product.available));
-                        if (action == 'delete') context.read<AppProvider>().firestore.deleteProduct(product.id);
+                        if (action == 'toggle') context.read<AppProvider>().data.saveProduct(Product(id: product.id, name: product.name, category: product.category, description: product.description, price: product.price, imageUrl: product.imageUrl, available: !product.available));
+                        if (action == 'delete') context.read<AppProvider>().data.deleteProduct(product.id);
                       },
                       itemBuilder: (_) => const [
                         PopupMenuItem(value: 'edit', child: Text('Edit')),
@@ -319,7 +319,7 @@ class _ProductEditorState extends State<ProductEditor> {
               final id = widget.product?.id ?? '${_name.text.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-')}-${DateTime.now().millisecondsSinceEpoch}';
               var imageUrl = widget.product?.imageUrl ?? '';
               if (image != null) imageUrl = await StorageService().uploadProductImage(id, image!);
-              await context.read<AppProvider>().firestore.saveProduct(Product(id: id, name: _name.text.trim(), category: category, description: _description.text.trim(), price: int.parse(_price.text), imageUrl: imageUrl, available: available));
+              await context.read<AppProvider>().data.saveProduct(Product(id: id, name: _name.text.trim(), category: category, description: _description.text.trim(), price: int.parse(_price.text), imageUrl: imageUrl, available: available));
               if (context.mounted) Navigator.pop(context);
             },
             child: const Text('Save'),
@@ -348,8 +348,8 @@ class DealsManagementScreen extends StatelessWidget {
                           trailing: PopupMenuButton<String>(
                             onSelected: (action) {
                               if (action == 'edit') showDialog(context: context, builder: (_) => DealEditor(deal: deal));
-                              if (action == 'toggle') context.read<AppProvider>().firestore.saveDeal(Deal(id: deal.id, name: deal.name, itemNames: deal.itemNames, originalPrice: deal.originalPrice, dealPrice: deal.dealPrice, imageUrl: deal.imageUrl, active: !deal.active));
-                              if (action == 'delete') context.read<AppProvider>().firestore.deleteDeal(deal.id);
+                              if (action == 'toggle') context.read<AppProvider>().data.saveDeal(Deal(id: deal.id, name: deal.name, itemNames: deal.itemNames, originalPrice: deal.originalPrice, dealPrice: deal.dealPrice, imageUrl: deal.imageUrl, active: !deal.active));
+                              if (action == 'delete') context.read<AppProvider>().data.deleteDeal(deal.id);
                             },
                             itemBuilder: (_) => const [PopupMenuItem(value: 'edit', child: Text('Edit')), PopupMenuItem(value: 'toggle', child: Text('Toggle active')), PopupMenuItem(value: 'delete', child: Text('Delete'))],
                           ),
@@ -414,7 +414,7 @@ class _DealEditorState extends State<DealEditor> {
           FilledButton(onPressed: () async {
             if (!_form.currentState!.validate()) return;
             final id = widget.deal?.id ?? '${name.text.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-')}-${DateTime.now().millisecondsSinceEpoch}';
-            await context.read<AppProvider>().firestore.saveDeal(Deal(id: id, name: name.text.trim(), itemNames: items.text.split(',').map((item) => item.trim()).where((item) => item.isNotEmpty).toList(), originalPrice: int.parse(original.text), dealPrice: int.parse(price.text), active: active));
+            await context.read<AppProvider>().data.saveDeal(Deal(id: id, name: name.text.trim(), itemNames: items.text.split(',').map((item) => item.trim()).where((item) => item.isNotEmpty).toList(), originalPrice: int.parse(original.text), dealPrice: int.parse(price.text), active: active));
             if (context.mounted) Navigator.pop(context);
           }, child: const Text('Save')),
         ],
@@ -427,7 +427,7 @@ class UserManagementScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
         body: StreamBuilder<List<AppUser>>(
-          stream: context.read<AppProvider>().firestore.staff(),
+          stream: context.read<AppProvider>().data.staff(),
           builder: (context, snapshot) {
             final users = snapshot.data ?? const [];
             if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
@@ -441,7 +441,7 @@ class UserManagementScreen extends StatelessWidget {
                           title: Text(user.name, style: const TextStyle(fontWeight: FontWeight.w900)),
                           subtitle: Text('${user.role.name.toUpperCase()} • ${user.phone}\n${user.rights.entries.where((right) => right.value).map((right) => right.key).join(', ')}'),
                           isThreeLine: true,
-                          trailing: IconButton(onPressed: () => context.read<AppProvider>().firestore.deleteStaff(user.id), icon: const Icon(Icons.delete_outline, color: MashColors.primary)),
+                          trailing: IconButton(onPressed: () => context.read<AppProvider>().data.deleteStaff(user.id), icon: const Icon(Icons.delete_outline, color: MashColors.primary)),
                         ),
                       ))
                   .toList(),
@@ -516,8 +516,13 @@ class _StaffEditorState extends State<StaffEditor> {
             onPressed: () async {
               if (!_form.currentState!.validate()) return;
               final app = context.read<AppProvider>();
-              final firebaseUser = await app.auth.createStaffAccount(phone.text, password.text);
-              await app.firestore.saveUser(AppUser(id: firebaseUser.uid, name: name.text.trim(), phone: phone.text.trim(), address: 'Mashbash restaurant', role: role, rights: Map.from(rights)));
+              await app.auth.createStaffAccount(
+                name: name.text.trim(),
+                phone: phone.text.trim(),
+                password: password.text,
+                role: role,
+                rights: Map.from(rights),
+              );
               if (context.mounted) Navigator.pop(context);
             },
             child: const Text('Create'),
