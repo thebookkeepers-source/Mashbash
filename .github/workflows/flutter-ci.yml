@@ -1,0 +1,41 @@
+name: Flutter CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate platform support files
+        run: |
+          flutter create --platforms=android .
+          rm -f test/widget_test.dart
+          rm -f android/settings.gradle.kts android/build.gradle.kts android/app/build.gradle.kts
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Verify Supabase migration
+        run: |
+          test -f supabase/migrations/20260606110000_initial_schema.sql
+          test -f supabase/functions/create-staff/index.ts
+          ! grep -R "package:firebase_" lib pubspec.yaml
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+      - name: Test
+        run: flutter test
+      - name: Build Android APK
+        run: flutter build apk --debug
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mashbash-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
