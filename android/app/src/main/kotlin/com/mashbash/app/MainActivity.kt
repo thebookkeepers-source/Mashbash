@@ -1,0 +1,5 @@
+package com.mashbash.app
+
+import io.flutter.embedding.android.FlutterActivity
+
+class MainActivity : FlutterActivity()
