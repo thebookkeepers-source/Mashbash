@@ -8,6 +8,9 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: https://ovgungpgntcqqthflucw.supabase.co
+      SUPABASE_PUBLISHABLE_KEY: sb_publishable_0JjtN_rKpOB_lmLvBDqG1A_fw2wwTKU
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -31,7 +34,10 @@ jobs:
       - name: Test
         run: flutter test
       - name: Build Android APK
-        run: flutter build apk --debug
+        run: |
+          flutter build apk --debug \
+            --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+            --dart-define=SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
