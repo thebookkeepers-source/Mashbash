@@ -1,8 +1,7 @@
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'firebase_options.dart';
 import 'models/app_models.dart';
 import 'providers/app_provider.dart';
 import 'screens/auth/auth_screens.dart';
@@ -15,7 +14,10 @@ import 'widgets/mash_widgets.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await Supabase.initialize(
+    url: const String.fromEnvironment('SUPABASE_URL', defaultValue: 'https://example.supabase.co'),
+    anonKey: const String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY', defaultValue: 'sb_publishable_configure_me'),
+  );
   final provider = AppProvider();
   await provider.initialize();
   runApp(ChangeNotifierProvider.value(value: provider, child: const MashbashApp()));
@@ -45,8 +47,8 @@ class AppRouter extends StatelessWidget {
     final user = app.user;
     if (app.auth.currentUser == null) return const LoginScreen();
     if (user == null) {
-      final isGoogleUser = app.auth.currentUser!.providerData.any((profile) => profile.providerId == 'google.com');
-      return isGoogleUser ? const OnboardingScreen() : const AccessDeniedScreen();
+      final email = app.auth.currentUser!.email ?? '';
+      return email.endsWith('@staff.mashbash.app') ? const AccessDeniedScreen() : const OnboardingScreen();
     }
     if (!user.profileComplete) return const OnboardingScreen();
     return switch (user.role) {
