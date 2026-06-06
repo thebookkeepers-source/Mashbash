@@ -1,0 +1,29 @@
+name: Apply Supabase migration
+
+on:
+  push:
+    branches: [codex/build-mashbash-flutter-app]
+    paths: [.github/workflows/apply-supabase-migration.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/build-mashbash-flutter-app
+      - name: Apply generated migration patch
+        run: |
+          base64 --decode .codex/supabase-migration.patch.gz.b64 | gzip --decompress > /tmp/supabase.patch
+          git apply /tmp/supabase.patch
+          rm -f .codex/supabase-migration.patch.gz.b64
+          rm -f .github/workflows/apply-supabase-migration.yml
+          rmdir .codex 2>/dev/null || true
+          git config user.name "Codex"
+          git config user.email "codex@openai.com"
+          git add -A
+          git commit -m "complete Supabase backend migration"
+          git push origin codex/build-mashbash-flutter-app
