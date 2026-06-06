@@ -60,8 +60,7 @@ service cloud.firestore {
 
     match /appConfig/{document} {
       allow read: if true;
-      allow create: if signedIn();
-      allow update, delete: if isOwner();
+      allow create, update, delete: if isOwner();
     }
   }
 }

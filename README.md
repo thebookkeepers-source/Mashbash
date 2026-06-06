@@ -57,7 +57,7 @@ Then create `users/{uid}` in Firestore:
 }
 ```
 
-The app seeds the complete Mashbash menu and launch deal into Firestore on first authenticated run.
+The app seeds the complete Mashbash menu and launch deal into Firestore on the first owner setup session.
 
 ## Run and build
 

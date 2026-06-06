@@ -53,7 +53,7 @@ class AppProvider extends ChangeNotifier {
     user = firebaseUser == null ? null : await firestore.getUser(firebaseUser.uid);
     if (user != null) {
       try {
-        await firestore.seedMenu();
+        if (user!.role == UserRole.owner) await firestore.seedMenu();
       } catch (_) {
         error = 'The live menu could not be synchronized. Please try again.';
       }
