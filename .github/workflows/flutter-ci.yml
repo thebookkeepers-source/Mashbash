@@ -9,8 +9,8 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     env:
-      SUPABASE_URL: https://ovgungpgntcqqthflucw.supabase.co
-      SUPABASE_PUBLISHABLE_KEY: sb_publishable_0JjtN_rKpOB_lmLvBDqG1A_fw2wwTKU
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -29,6 +29,10 @@ jobs:
           test -f supabase/migrations/20260606110000_initial_schema.sql
           test -f supabase/functions/create-staff/index.ts
           ! grep -R "package:firebase_" lib pubspec.yaml
+      - name: Verify Supabase build config
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_PUBLISHABLE_KEY"
       - name: Analyze
         run: flutter analyze --no-fatal-infos
       - name: Test
