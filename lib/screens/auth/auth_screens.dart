@@ -46,7 +46,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                         ),
                         const Padding(padding: EdgeInsets.symmetric(vertical: 14), child: Row(children: [Expanded(child: Divider()), Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('or')), Expanded(child: Divider())])),
-                        TextFormField(controller: _identifier, keyboardType: TextInputType.emailAddress, validator: Validators.emailOrPhone, decoration: const InputDecoration(labelText: 'Customer email or staff mobile', prefixIcon: Icon(Icons.alternate_email_rounded))),
+                        TextFormField(controller: _identifier, keyboardType: TextInputType.emailAddress, validator: Validators.emailOrPhone, decoration: const InputDecoration(labelText: 'Email or phone number', prefixIcon: Icon(Icons.alternate_email_rounded))),
                         const SizedBox(height: 12),
                         TextFormField(
                           controller: _password,
