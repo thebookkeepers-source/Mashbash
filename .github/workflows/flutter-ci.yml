@@ -21,9 +21,6 @@ jobs:
           rm -f android/settings.gradle.kts android/build.gradle.kts android/app/build.gradle.kts
       - name: Install dependencies
         run: flutter pub get
-      - name: Configure Firebase for CI build
-        run: |
-          cp android/app/google-services.ci.json android/app/google-services.json
       - name: Analyze
         run: flutter analyze --no-fatal-infos
       - name: Test
