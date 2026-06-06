@@ -1,20 +1,20 @@
 import 'dart:io';
 
-import 'package:firebase_storage/firebase_storage.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class StorageService {
-  StorageService({FirebaseStorage? storage}) : _storage = storage ?? FirebaseStorage.instance;
-  final FirebaseStorage _storage;
+  StorageService({SupabaseClient? client}) : _client = client ?? Supabase.instance.client;
+  final SupabaseClient _client;
 
-  Future<String> uploadProductImage(String productId, File file) async {
-    final ref = _storage.ref('products/$productId.jpg');
-    await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
-    return ref.getDownloadURL();
-  }
+  Future<String> uploadProductImage(String productId, File file) => _upload('products/$productId.jpg', file);
+  Future<String> uploadDealImage(String dealId, File file) => _upload('deals/$dealId.jpg', file);
 
-  Future<String> uploadDealImage(String dealId, File file) async {
-    final ref = _storage.ref('deals/$dealId.jpg');
-    await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
-    return ref.getDownloadURL();
+  Future<String> _upload(String path, File file) async {
+    await _client.storage.from('product-images').uploadBinary(
+          path,
+          await file.readAsBytes(),
+          fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
+        );
+    return _client.storage.from('product-images').getPublicUrl(path);
   }
 }
