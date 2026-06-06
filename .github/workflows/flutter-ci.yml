@@ -21,6 +21,11 @@ jobs:
           rm -f android/settings.gradle.kts android/build.gradle.kts android/app/build.gradle.kts
       - name: Install dependencies
         run: flutter pub get
+      - name: Verify Supabase migration
+        run: |
+          test -f supabase/migrations/20260606110000_initial_schema.sql
+          test -f supabase/functions/create-staff/index.ts
+          ! grep -R "package:firebase_" lib pubspec.yaml
       - name: Analyze
         run: flutter analyze --no-fatal-infos
       - name: Test
