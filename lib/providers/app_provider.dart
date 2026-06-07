@@ -38,6 +38,7 @@ class AppProvider extends ChangeNotifier {
   RestaurantSettings settings = const RestaurantSettings();
   final Map<String, int> _cart = {};
   final Set<String> busyOrders = {};
+  final Set<String> _pendingAlertsSent = {};
   bool initializing = true;
   bool connectionError = false;
   bool retryingConnection = false;
@@ -119,6 +120,7 @@ class AppProvider extends ChangeNotifier {
           )
           .listen((value) {
         orders = value;
+        _checkPendingAlerts();
         notifyListeners();
       });
       final prefs = await SharedPreferences.getInstance();
@@ -236,6 +238,17 @@ class AppProvider extends ChangeNotifier {
 
   Future<bool> sendCustomNotification({required String title, required String body}) =>
       run(() => data.sendCustomNotification(title: title, body: body), success: 'Notification sent to active customer devices.');
+
+  void _checkPendingAlerts() {
+    if (user == null || !const [UserRole.owner, UserRole.manager, UserRole.counter].contains(user!.role)) return;
+    final cutoff = DateTime.now().subtract(Duration(minutes: settings.pendingAlertMinutes));
+    for (final order in orders) {
+      final pending = const [OrderStatus.received, OrderStatus.accepted, OrderStatus.preparing].contains(order.status);
+      if (pending && order.createdAt.isBefore(cutoff) && _pendingAlertsSent.add(order.id)) {
+        unawaited(data.notifyOrderEvent('pending_order', order.id).catchError((_) {}));
+      }
+    }
+  }
 
   Future<bool> _runOrder(String id, Future<void> Function() action, String success) async {
     busyOrders.add(id);

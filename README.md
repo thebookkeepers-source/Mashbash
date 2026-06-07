@@ -169,5 +169,6 @@ Add repository Actions secrets named `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KE
 - Riders can read only orders assigned to them and can use only guarded delivery-status RPC transitions.
 - Product image writes require menu-management permission; public reads use the `product-images` bucket.
 - FCM service-account credentials exist only in Supabase secrets. The JWT-protected notification Edge Function validates the caller and resolves recipients through protected `device_tokens`.
+- Active owner/manager/counter sessions detect orders that exceed the configured pending-alert time; the backend deduplicates each delayed-order notification.
 - Device tokens can be read only by their owning user; registration and deactivation use guarded database functions.
 - Role changes are protected in the database, and passwords are handled only by Supabase Auth.

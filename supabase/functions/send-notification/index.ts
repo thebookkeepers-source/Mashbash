@@ -9,6 +9,7 @@ type Order = {
   customer_name: string;
   assigned_rider_id: string | null;
   status: string;
+  created_at: string;
 };
 type DeviceToken = { id: string; token: string; role: string };
 
@@ -56,7 +57,7 @@ Deno.serve(async (req: Request) => {
       orderId = String(request.order_id ?? "");
       const { data: orderRow } = await admin
         .from("orders")
-        .select("id, customer_id, customer_name, assigned_rider_id, status")
+        .select("id, customer_id, customer_name, assigned_rider_id, status, created_at")
         .eq("id", orderId)
         .single<Order>();
       order = orderRow;
@@ -90,6 +91,14 @@ Deno.serve(async (req: Request) => {
         userIds.add(order.customer_id);
         if (order.assigned_rider_id) userIds.add(order.assigned_rider_id);
         ["owner", "manager", "counter"].forEach((role) => roles.add(role));
+      } else if (event === "pending_order") {
+        if (!staff || !["received", "accepted", "preparing"].includes(order.status)) return json({ error: "Order access denied." }, 403);
+        const { data: settings } = await admin.from("app_settings").select("pending_alert_minutes").eq("id", "main").maybeSingle();
+        const pendingMinutes = Number(settings?.pending_alert_minutes ?? 15);
+        if (Date.now() - new Date(order.created_at).getTime() < pendingMinutes * 60_000) return json({ sent: 0 });
+        title = "Order waiting too long";
+        body = `Order #${shortId(order.id)} has been pending for more than ${pendingMinutes} minutes.`;
+        ["owner", "manager", "counter"].forEach((role) => roles.add(role));
       } else {
         return json({ error: "Unsupported notification event." }, 400);
       }
@@ -107,6 +116,12 @@ Deno.serve(async (req: Request) => {
 
     if (tokens.size === 0) return json({ sent: 0 });
     const accessToken = await firebaseAccessToken();
+    if (order) {
+      const eventKey = event === "order_status" ? `${event}:${order.status}` : event;
+      const { error: eventError } = await admin.from("notification_events").insert({ order_id: order.id, event_key: eventKey });
+      if (eventError?.code === "23505") return json({ sent: 0, duplicate: true });
+      if (eventError) throw eventError;
+    }
     let sent = 0;
     for (const [id, device] of tokens) {
       const recipient = recipientMessage(event, device.role, order, title, body);

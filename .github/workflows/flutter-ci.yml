@@ -33,6 +33,7 @@ jobs:
           test -f supabase/migrations/20260607193000_notification_security_hardening.sql
           test -f supabase/migrations/20260607194500_device_token_policy_lockdown.sql
           test -f supabase/migrations/20260607195500_trigger_function_lockdown.sql
+          test -f supabase/migrations/20260607202000_notification_event_deduplication.sql
           test -f supabase/functions/create-staff/index.ts
           test -f supabase/functions/send-notification/index.ts
           test -f lib/screens/rider/rider_panel.dart
