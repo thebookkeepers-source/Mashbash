@@ -23,6 +23,8 @@ class _CustomerShellState extends State<CustomerShell> {
   Widget build(BuildContext context) => Scaffold(
         body: IndexedStack(index: index, children: const [HomeScreen(), OrderHistoryScreen(), ProfileScreen()]),
         bottomNavigationBar: NavigationBar(
+          height: 72,
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
           selectedIndex: index,
           onDestinationSelected: (value) => setState(() => index = value),
           destinations: const [
@@ -531,11 +533,15 @@ class OrderTrackingScreen extends StatelessWidget {
           : ListView(padding: const EdgeInsets.all(16), children: [
               MashPanel(
                 color: MashColors.secondary.withValues(alpha: .24),
-                child: Row(children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Order #${order.id.substring(0, 8).toUpperCase()}', style: const TextStyle(fontWeight: FontWeight.w900)), const SizedBox(height: 4), Text(order.assignedRiderName.isEmpty ? 'Your order is moving through the kitchen.' : 'Rider: ${order.assignedRiderName}')])) , OrderStatusChip(status: order.status)]),
+                child: Row(children: [
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Order #${order.id.substring(0, 8).toUpperCase()}', style: const TextStyle(fontWeight: FontWeight.w900)), const SizedBox(height: 4), Text(order.assignedRiderName.isEmpty ? 'Your order is moving through the kitchen.' : 'Rider: ${order.assignedRiderName}')])),
+                  const SizedBox(width: 8),
+                  Flexible(child: FittedBox(fit: BoxFit.scaleDown, child: OrderStatusChip(status: order.status))),
+                ]),
               ),
               const SizedBox(height: 16),
               ...OrderStatus.values.where((status) => status != OrderStatus.cancelled).map((status) {
-                final complete = order.status != OrderStatus.cancelled && status.index <= order.status.index;
+                final complete = !order.status.isCancelled && status.index <= order.status.index;
                 final current = status == order.status;
                 return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Column(children: [
@@ -546,7 +552,7 @@ class OrderTrackingScreen extends StatelessWidget {
                   Expanded(child: Padding(padding: const EdgeInsets.only(top: 7), child: Text(statusLabel(status), style: TextStyle(fontWeight: current ? FontWeight.w900 : FontWeight.w600, color: current ? MashColors.primary : MashColors.ink)))),
                 ]);
               }),
-              if (order.status == OrderStatus.cancelled) const MashPanel(color: Color(0xFFFFE3E3), child: Text('This order was cancelled.', style: TextStyle(fontWeight: FontWeight.w900, color: MashColors.primary))),
+              if (order.status.isCancelled) const MashPanel(color: Color(0xFFFFE3E3), child: Text('This order was cancelled.', style: TextStyle(fontWeight: FontWeight.w900, color: MashColors.primary))),
               const SizedBox(height: 16),
               MashPanel(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -590,7 +596,7 @@ class OrderHistoryScreen extends StatelessWidget {
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => OrderTrackingScreen(orderId: order.id))),
                     title: Text(order.items.map((item) => '${item['quantity']} x ${item['name']}').join(', '), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)),
                     subtitle: Text('${order.createdAt.day}/${order.createdAt.month}/${order.createdAt.year} - ${money(order.total)}'),
-                    trailing: OrderStatusChip(status: order.status),
+                    trailing: SizedBox(width: 112, child: FittedBox(fit: BoxFit.scaleDown, child: OrderStatusChip(status: order.status))),
                   ),
                 );
               },

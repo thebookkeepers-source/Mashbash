@@ -20,8 +20,8 @@ class _RiderPanelState extends State<RiderPanel> {
   Widget build(BuildContext context) {
     final app = context.watch<AppProvider>();
     final user = app.user!;
-    final active = app.orders.where((order) => order.status != OrderStatus.delivered && order.status != OrderStatus.cancelled).toList();
-    final history = app.orders.where((order) => order.status == OrderStatus.delivered || order.status == OrderStatus.cancelled).toList();
+    final active = app.activeOrders;
+    final history = app.historyOrders;
     return Scaffold(
       appBar: AppBar(
         title: const MashLogo(compact: true, onDark: true),
@@ -35,6 +35,8 @@ class _RiderPanelState extends State<RiderPanel> {
         ],
       ),
       bottomNavigationBar: NavigationBar(
+        height: 72,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         selectedIndex: index,
         onDestinationSelected: (value) => setState(() => index = value),
         destinations: const [
@@ -79,14 +81,14 @@ class _RiderOrders extends StatelessWidget {
             message: history ? 'Completed deliveries will appear here.' : 'New assigned orders will appear automatically.',
           )
         else
-          ...orders.map((order) => _RiderOrderCard(order: order)),
+          ...orders.map((order) => _RiderOrderCard(key: ValueKey(order.id), order: order)),
       ],
     );
   }
 }
 
 class _RiderOrderCard extends StatelessWidget {
-  const _RiderOrderCard({required this.order});
+  const _RiderOrderCard({required this.order, super.key});
   final MashOrder order;
 
   @override
@@ -102,7 +104,11 @@ class _RiderOrderCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [Expanded(child: Text(order.customerName, style: Theme.of(context).textTheme.titleLarge)), OrderStatusChip(status: order.status)]),
+          Row(children: [
+            Expanded(child: Text(order.customerName, maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleLarge)),
+            const SizedBox(width: 8),
+            Flexible(child: FittedBox(fit: BoxFit.scaleDown, child: OrderStatusChip(status: order.status))),
+          ]),
           const SizedBox(height: 8),
           Text(order.items.map((item) => '${item['quantity']} x ${item['name']}').join(', ')),
           const Divider(height: 24),

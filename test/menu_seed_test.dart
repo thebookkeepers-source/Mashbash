@@ -98,8 +98,31 @@ void main() {
   test('production order statuses map from Supabase snake case', () {
     expect(OrderStatus.fromDb('ready_for_delivery'), OrderStatus.readyForDelivery);
     expect(OrderStatus.fromDb('assigned_to_rider'), OrderStatus.assignedToRider);
+    expect(OrderStatus.fromDb('OutForDelivery'), OrderStatus.outForDelivery);
     expect(OrderStatus.outForDelivery.dbValue, 'out_for_delivery');
     expect(OrderStatus.fromDb('processing'), OrderStatus.preparing);
+    expect(OrderStatus.fromDb('Completed'), OrderStatus.delivered);
+    expect(OrderStatus.fromDb('Delivered'), OrderStatus.delivered);
+    expect(OrderStatus.fromDb('canceled'), OrderStatus.cancelled);
+    expect(OrderStatus.delivered.isTerminal, isTrue);
+    expect(OrderStatus.cancelled.isTerminal, isTrue);
+    expect(OrderStatus.preparing.isActive, isTrue);
+    expect(OrderStatus.delivered.isActive, isFalse);
+  });
+
+  test('order feed is realtime-first and staff orders default to active', () {
+    final provider = File('lib/providers/app_provider.dart').readAsStringSync();
+    final service = File('lib/services/supabase_service.dart').readAsStringSync();
+    final staffOrders = File('lib/screens/owner/admin_screens.dart').readAsStringSync();
+
+    expect(provider, contains('if (!initializing && authUser?.id == user?.id) return;'));
+    expect(provider, contains('subscribeToOrderChanges'));
+    expect(provider, contains('discarded stale full refresh'));
+    expect(provider, isNot(contains('_ordersSubscription')));
+    expect(service, contains("table: 'orders'"));
+    expect(service, contains("table: 'order_items'"));
+    expect(staffOrders, contains('_StaffOrderFilter filter = _StaffOrderFilter.active;'));
+    expect(File('supabase/migrations/20260607230000_order_realtime.sql').existsSync(), isTrue);
   });
 
   test('rider, category, slide, and deal models support production workflows', () {

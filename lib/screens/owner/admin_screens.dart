@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -60,26 +61,27 @@ class _StaffBottomNav extends StatelessWidget {
   Widget build(BuildContext context) => SafeArea(
         top: false,
         child: Container(
-          height: 66,
+          height: 72,
           color: Colors.white,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
+            itemExtent: 76,
             itemCount: destinations.length,
             itemBuilder: (context, index) {
               final item = destinations[index];
               final active = index == selected;
-              return SizedBox(
-                width: 72,
-                child: InkWell(
-                  onTap: () => onSelected(index),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 3),
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(item.icon, color: active ? MashColors.primary : Colors.black54),
-                      const SizedBox(height: 3),
-                      Text(item.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10, fontWeight: active ? FontWeight.w900 : FontWeight.w600, color: active ? MashColors.primary : Colors.black54)),
-                    ]),
-                  ),
+              return InkWell(
+                onTap: () => onSelected(index),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 5),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(item.icon, size: 22, color: active ? MashColors.primary : Colors.black54),
+                    const SizedBox(height: 4),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(item.label, maxLines: 1, style: TextStyle(fontSize: 10, fontWeight: active ? FontWeight.w900 : FontWeight.w600, color: active ? MashColors.primary : Colors.black54)),
+                    ),
+                  ]),
                 ),
               );
             },
@@ -112,12 +114,12 @@ class _StaffDashboardState extends State<StaffDashboard> {
     final now = DateTime.now();
     final range = _periodRange(period, custom);
     final orders = allOrders.where((order) => !order.createdAt.isBefore(range.start) && order.createdAt.isBefore(range.end)).toList();
-    final sales = orders.where((order) => order.status == OrderStatus.delivered).fold<int>(0, (sum, order) => sum + order.total);
-    final active = orders.where((order) => order.status != OrderStatus.delivered && order.status != OrderStatus.cancelled).length;
+    final sales = orders.where((order) => order.status.isCompleted).fold<int>(0, (sum, order) => sum + order.total);
+    final active = allOrders.where((order) => order.status.isActive).length;
     final start = DateTime(now.year, now.month, now.day);
     final bars = List.generate(7, (index) {
       final day = start.subtract(Duration(days: 6 - index));
-      final total = allOrders.where((order) => order.status == OrderStatus.delivered && _sameDay(order.createdAt, day)).fold<int>(0, (sum, order) => sum + order.total);
+      final total = allOrders.where((order) => order.status.isCompleted && _sameDay(order.createdAt, day)).fold<int>(0, (sum, order) => sum + order.total);
       return BarChartGroupData(x: index, barRods: [BarChartRodData(toY: total.toDouble(), color: MashColors.primary, width: 15, borderRadius: BorderRadius.circular(6))]);
     });
     return ListView(
@@ -137,7 +139,7 @@ class _StaffDashboardState extends State<StaffDashboard> {
           _Metric('$period sales', money(sales), Icons.payments_rounded),
           _Metric('$period orders', '${orders.length}', Icons.receipt_long_rounded),
           _Metric('Active orders', '$active', Icons.delivery_dining_rounded),
-          _Metric('Completed', '${orders.where((order) => order.status == OrderStatus.delivered).length}', Icons.check_circle_rounded),
+          _Metric('Completed', '${orders.where((order) => order.status.isCompleted).length}', Icons.check_circle_rounded),
         ]),
         const SizedBox(height: 16),
         MashPanel(
@@ -149,7 +151,7 @@ class _StaffDashboardState extends State<StaffDashboard> {
         ),
         const SizedBox(height: 16),
         const SectionHeading('Recent orders'),
-        ...allOrders.take(5).map((order) => Card(child: ListTile(title: Text(order.customerName, style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text('${order.items.length} items · ${money(order.total)}'), trailing: OrderStatusChip(status: order.status)))),
+        ...allOrders.take(5).map((order) => Card(child: ListTile(title: Text(order.customerName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text('${order.items.length} items · ${money(order.total)}'), trailing: SizedBox(width: 112, child: FittedBox(fit: BoxFit.scaleDown, child: OrderStatusChip(status: order.status)))))),
         if (allOrders.isEmpty) const EmptyState(icon: Icons.receipt_long_outlined, title: 'No orders yet', message: 'Incoming customer orders will appear here in real time.'),
       ],
     );
@@ -197,41 +199,100 @@ class StaffOrdersScreen extends StatefulWidget {
 }
 
 class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
-  OrderStatus? filter;
+  _StaffOrderFilter filter = _StaffOrderFilter.active;
+  int? _lastLoggedTotal;
+  int? _lastLoggedVisible;
 
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppProvider>();
     final user = app.user!;
-    final orders = app.orders.where((order) => filter == null || order.status == filter).toList();
+    final orders = app.orders.where(filter.matches).toList();
+    _logFilterIfChanged(app, orders.length);
     return Column(children: [
       SizedBox(
-        height: 58,
+        height: 56,
         child: ListView(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
           scrollDirection: Axis.horizontal,
-          children: [
-            ChoiceChip(label: const Text('All'), selected: filter == null, onSelected: (_) => setState(() => filter = null)),
-            const SizedBox(width: 6),
-            ...OrderStatus.values.map((status) => Padding(padding: const EdgeInsets.only(right: 6), child: ChoiceChip(label: Text(statusLabel(status)), selected: filter == status, onSelected: (_) => setState(() => filter = status)))),
-          ],
+          children: _StaffOrderFilter.values
+              .map((value) => Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text(value.label),
+                      selected: filter == value,
+                      onSelected: (_) => _setFilter(value, app),
+                    ),
+                  ))
+              .toList(),
         ),
       ),
       Expanded(
-        child: orders.isEmpty
-            ? const EmptyState(icon: Icons.inbox_rounded, title: 'No matching orders', message: 'Orders matching this filter will appear automatically.')
+        child: app.ordersLoading && app.orders.isEmpty
+            ? const Center(child: CircularProgressIndicator())
+            : orders.isEmpty
+                ? EmptyState(
+                    icon: filter == _StaffOrderFilter.active ? Icons.check_circle_outline_rounded : Icons.inbox_rounded,
+                    title: filter == _StaffOrderFilter.active ? 'No active orders right now' : 'No matching orders',
+                    message: filter == _StaffOrderFilter.active ? 'New customer orders will appear here automatically.' : 'Orders matching this filter will appear automatically.',
+                  )
             : ListView.builder(
                 padding: const EdgeInsets.all(12),
                 itemCount: orders.length,
-                itemBuilder: (_, index) => _OrderOperationsCard(order: orders[index], canUpdate: user.can('updateOrderStatus'), canAssign: user.can('assignRiders')),
+                itemBuilder: (_, index) => _OrderOperationsCard(key: ValueKey(orders[index].id), order: orders[index], canUpdate: user.can('updateOrderStatus'), canAssign: user.can('assignRiders')),
               ),
       ),
     ]);
   }
+
+  void _setFilter(_StaffOrderFilter value, AppProvider app) {
+    if (!mounted) return;
+    setState(() => filter = value);
+    if (kDebugMode) {
+      final visible = app.orders.where(value.matches).length;
+      debugPrint('[Orders UI] filter=${value.name}; visible=$visible, active=${app.activeOrders.length}, history=${app.historyOrders.length}');
+    }
+  }
+
+  void _logFilterIfChanged(AppProvider app, int visible) {
+    if (!kDebugMode || (_lastLoggedTotal == app.orders.length && _lastLoggedVisible == visible)) return;
+    _lastLoggedTotal = app.orders.length;
+    _lastLoggedVisible = visible;
+    debugPrint('[Orders UI] filter=${filter.name}; visible=$visible, active=${app.activeOrders.length}, history=${app.historyOrders.length}');
+  }
+}
+
+enum _StaffOrderFilter {
+  active('Active'),
+  received('New'),
+  accepted('Accepted'),
+  preparing('Prep'),
+  ready('Ready'),
+  assigned('Assigned'),
+  outForDelivery('Out'),
+  history('History'),
+  completed('Done'),
+  cancelled('Cancelled');
+
+  const _StaffOrderFilter(this.label);
+  final String label;
+
+  bool matches(MashOrder order) => switch (this) {
+        active => order.status.isActive,
+        received => order.status == OrderStatus.received,
+        accepted => order.status == OrderStatus.accepted,
+        preparing => order.status == OrderStatus.preparing,
+        ready => order.status == OrderStatus.readyForDelivery,
+        assigned => order.status == OrderStatus.assignedToRider,
+        outForDelivery => order.status == OrderStatus.outForDelivery,
+        history => order.status.isTerminal,
+        completed => order.status.isCompleted,
+        cancelled => order.status.isCancelled,
+      };
 }
 
 class _OrderOperationsCard extends StatelessWidget {
-  const _OrderOperationsCard({required this.order, required this.canUpdate, required this.canAssign});
+  const _OrderOperationsCard({required this.order, required this.canUpdate, required this.canAssign, super.key});
   final MashOrder order;
   final bool canUpdate;
   final bool canAssign;
@@ -244,7 +305,11 @@ class _OrderOperationsCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [Expanded(child: Text('${order.customerName} · #${order.id.substring(0, 6).toUpperCase()}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17))), OrderStatusChip(status: order.status)]),
+          Row(children: [
+            Expanded(child: Text('${order.customerName} · #${order.id.substring(0, 6).toUpperCase()}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17))),
+            const SizedBox(width: 8),
+            Flexible(child: FittedBox(fit: BoxFit.scaleDown, child: OrderStatusChip(status: order.status))),
+          ]),
           const SizedBox(height: 5),
           Text(order.items.map((item) => '${item['quantity']}× ${item['name']}').join(', ')),
           const SizedBox(height: 8),
@@ -258,7 +323,7 @@ class _OrderOperationsCard extends StatelessWidget {
             const SizedBox(height: 10),
             FilledButton.icon(onPressed: () => context.read<AppProvider>().updateOrderStatus(order.id, next), icon: const Icon(Icons.arrow_forward_rounded), label: Text('Mark ${statusLabel(next)}')),
           ],
-          if (!busy && canUpdate && order.status != OrderStatus.cancelled && order.status != OrderStatus.delivered)
+          if (!busy && canUpdate && order.status.isActive)
             TextButton.icon(onPressed: () => context.read<AppProvider>().updateOrderStatus(order.id, OrderStatus.cancelled), icon: const Icon(Icons.cancel_outlined), label: const Text('Cancel order')),
           if (busy) const Padding(padding: EdgeInsets.all(10), child: LinearProgressIndicator()),
         ]),
@@ -1112,7 +1177,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final app = context.watch<AppProvider>();
     final range = _periodRange(period, custom);
     final orders = app.orders.where((order) => !order.createdAt.isBefore(range.start) && order.createdAt.isBefore(range.end)).toList();
-    final delivered = orders.where((order) => order.status == OrderStatus.delivered).toList();
+    final delivered = orders.where((order) => order.status.isCompleted).toList();
     final revenue = delivered.fold<int>(0, (sum, order) => sum + order.total);
     final counts = <String, int>{};
     final categorySales = <String, int>{};
@@ -1128,8 +1193,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
     final top = counts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
     final categories = categorySales.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
-    final pending = orders.where((order) => order.status != OrderStatus.delivered && order.status != OrderStatus.cancelled).length;
-    final summary = 'Mashbash $period report\nRevenue: ${money(revenue)}\nOrders: ${orders.length}\nCompleted: ${delivered.length}\nPending: $pending\nCancelled: ${orders.where((order) => order.status == OrderStatus.cancelled).length}\nTop items: ${top.take(5).map((item) => '${item.key} (${item.value})').join(', ')}';
+    final pending = orders.where((order) => order.status.isActive).length;
+    final summary = 'Mashbash $period report\nRevenue: ${money(revenue)}\nOrders: ${orders.length}\nCompleted: ${delivered.length}\nPending: $pending\nCancelled: ${orders.where((order) => order.status.isCancelled).length}\nTop items: ${top.take(5).map((item) => '${item.key} (${item.value})').join(', ')}';
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -1146,7 +1211,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           _Metric('All orders', '${orders.length}', Icons.receipt_long_rounded),
           _Metric('Completed', '${delivered.length}', Icons.check_circle_rounded),
           _Metric('Pending', '$pending', Icons.timelapse_rounded),
-          _Metric('Cancelled', '${orders.where((order) => order.status == OrderStatus.cancelled).length}', Icons.cancel_rounded),
+          _Metric('Cancelled', '${orders.where((order) => order.status.isCancelled).length}', Icons.cancel_rounded),
         ]),
         const SizedBox(height: 16),
         MashPanel(

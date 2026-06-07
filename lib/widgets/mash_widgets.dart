@@ -170,11 +170,11 @@ class OrderStatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Chip(
-        avatar: Icon(status == OrderStatus.delivered ? Icons.check_circle : Icons.timelapse, size: 18, color: status == OrderStatus.delivered ? MashColors.success : MashColors.primary),
+        avatar: Icon(status.isCompleted ? Icons.check_circle : Icons.timelapse, size: 18, color: status.isCompleted ? MashColors.success : MashColors.primary),
         label: Text(statusLabel(status), style: const TextStyle(fontWeight: FontWeight.w700)),
-        backgroundColor: status == OrderStatus.delivered
+        backgroundColor: status.isCompleted
             ? const Color(0xFFE2F5E9)
-            : status == OrderStatus.cancelled
+            : status.isCancelled
                 ? const Color(0xFFFFE3E3)
                 : const Color(0xFFFFECE8),
         side: BorderSide.none,

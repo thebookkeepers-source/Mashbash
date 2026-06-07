@@ -13,10 +13,28 @@ enum OrderStatus {
   const OrderStatus(this.dbValue);
   final String dbValue;
 
-  static OrderStatus fromDb(String? value) => values.firstWhere(
-        (status) => status.dbValue == value || status.name == value,
-        orElse: () => value == 'processing' ? preparing : received,
-      );
+  static OrderStatus fromDb(String? value) {
+    final normalized = (value ?? '').trim().toLowerCase().replaceAll(RegExp(r'[\s-]+'), '_');
+    return switch (normalized) {
+      'accepted' => accepted,
+      'processing' || 'preparing' || 'prep' => preparing,
+      'ready_for_delivery' || 'readyfordelivery' || 'ready' => readyForDelivery,
+      'assigned_to_rider' || 'assignedtorider' || 'assigned' => assignedToRider,
+      'out_for_delivery' || 'outfordelivery' || 'picked_up' || 'pickedup' => outForDelivery,
+      'complete' || 'completed' || 'delivered' => delivered,
+      'canceled' || 'cancelled' => cancelled,
+      _ => received,
+    };
+  }
+
+  bool get isActive => switch (this) {
+        received || accepted || preparing || readyForDelivery || assignedToRider || outForDelivery => true,
+        delivered || cancelled => false,
+      };
+
+  bool get isTerminal => !isActive;
+  bool get isCompleted => this == delivered;
+  bool get isCancelled => this == cancelled;
 }
 
 class AppUser {
@@ -200,6 +218,33 @@ class MashOrder {
   final DateTime? assignedAt;
   final DateTime? deliveredAt;
   int get total => subtotal + deliveryFee;
+
+  MashOrder copyWith({
+    OrderStatus? status,
+    String? assignedRiderId,
+    String? assignedRiderName,
+    String? acceptedBy,
+    DateTime? assignedAt,
+    DateTime? deliveredAt,
+  }) =>
+      MashOrder(
+        id: id,
+        customerId: customerId,
+        customerName: customerName,
+        phone: phone,
+        address: address,
+        paymentMethod: paymentMethod,
+        items: items,
+        subtotal: subtotal,
+        deliveryFee: deliveryFee,
+        status: status ?? this.status,
+        createdAt: createdAt,
+        assignedRiderId: assignedRiderId ?? this.assignedRiderId,
+        assignedRiderName: assignedRiderName ?? this.assignedRiderName,
+        acceptedBy: acceptedBy ?? this.acceptedBy,
+        assignedAt: assignedAt ?? this.assignedAt,
+        deliveredAt: deliveredAt ?? this.deliveredAt,
+      );
 
   factory MashOrder.fromMap(Map<String, dynamic> map) {
     final rider = map['assigned_rider'] as Map?;

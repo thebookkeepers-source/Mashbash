@@ -42,6 +42,7 @@ jobs:
           test -f supabase/migrations/20260607210000_notification_delivery_reliability.sql
           test -f supabase/migrations/20260607220000_release_security_performance.sql
           test -f supabase/migrations/20260607221000_rls_policy_performance.sql
+          test -f supabase/migrations/20260607230000_order_realtime.sql
           test -f supabase/functions/create-staff/index.ts
           test -f supabase/functions/send-notification/index.ts
           test -f lib/screens/rider/rider_panel.dart

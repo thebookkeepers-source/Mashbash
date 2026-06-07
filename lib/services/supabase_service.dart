@@ -14,6 +14,8 @@ class SupabaseService {
   final SupabaseClient _client;
   final StreamController<Object> _connectionFailures = StreamController<Object>.broadcast();
   static const requestTimeout = Duration(seconds: 15);
+  static const _orderSelect =
+      'id, customer_id, customer_name, phone, address, payment_method, subtotal, delivery_fee, status, assigned_rider_id, accepted_by, assigned_at, delivered_at, created_at, order_items(id, product_id, deal_id, item_type, name, price, quantity, image_url, category_name, line_total), assigned_rider:profiles!orders_assigned_rider_id_fkey(name)';
 
   Stream<Object> get connectionFailures => _connectionFailures.stream;
 
@@ -72,14 +74,50 @@ class SupabaseService {
         return [RestaurantSettings.fromMap(row)];
       }, interval: const Duration(seconds: 15)).map((values) => values.first);
 
-  Stream<List<MashOrder>> orders({String? customerId, bool riderOnly = false}) => _poll(() async {
-        var query = _client
-            .from('orders')
-            .select('id, customer_id, customer_name, phone, address, payment_method, subtotal, delivery_fee, status, assigned_rider_id, accepted_by, assigned_at, delivered_at, created_at, order_items(id, product_id, deal_id, item_type, name, price, quantity, image_url, category_name, line_total), assigned_rider:profiles!orders_assigned_rider_id_fkey(name)');
-        if (customerId != null) query = query.eq(riderOnly ? 'assigned_rider_id' : 'customer_id', customerId);
-        final rows = await query.order('created_at', ascending: false);
-        return rows.map(MashOrder.fromMap).toList();
-      }, interval: const Duration(seconds: 4));
+  Future<List<MashOrder>> fetchOrders({String? customerId, bool riderOnly = false}) async {
+    var query = _client.from('orders').select(_orderSelect);
+    if (customerId != null) query = query.eq(riderOnly ? 'assigned_rider_id' : 'customer_id', customerId);
+    final rows = await query.order('created_at', ascending: false).timeout(requestTimeout);
+    return rows.map(MashOrder.fromMap).toList();
+  }
+
+  Future<MashOrder?> fetchOrder(String orderId, {String? customerId, bool riderOnly = false}) async {
+    var query = _client.from('orders').select(_orderSelect).eq('id', orderId);
+    if (customerId != null) query = query.eq(riderOnly ? 'assigned_rider_id' : 'customer_id', customerId);
+    final row = await query.maybeSingle().timeout(requestTimeout);
+    return row == null ? null : MashOrder.fromMap(row);
+  }
+
+  RealtimeChannel subscribeToOrderChanges({
+    required void Function(String orderId, String source) onChanged,
+    required void Function(bool connected) onConnectionChanged,
+  }) {
+    void handleOrder(PostgresChangePayload payload) {
+      final record = payload.newRecord.isNotEmpty ? payload.newRecord : payload.oldRecord;
+      final id = record['id'] as String?;
+      if (id != null) onChanged(id, 'orders.${payload.eventType.name}');
+    }
+
+    void handleOrderItem(PostgresChangePayload payload) {
+      final record = payload.newRecord.isNotEmpty ? payload.newRecord : payload.oldRecord;
+      final id = record['order_id'] as String?;
+      if (id != null) onChanged(id, 'order_items.${payload.eventType.name}');
+    }
+
+    final channel = _client
+        .channel('mashbash-orders-${DateTime.now().microsecondsSinceEpoch}')
+        .onPostgresChanges(event: PostgresChangeEvent.all, schema: 'public', table: 'orders', callback: handleOrder)
+        .onPostgresChanges(event: PostgresChangeEvent.all, schema: 'public', table: 'order_items', callback: handleOrderItem);
+    channel.subscribe((status, error) {
+      onConnectionChanged(status == RealtimeSubscribeStatus.subscribed);
+      if (error != null && !_connectionFailures.isClosed) _connectionFailures.add(error);
+    });
+    return channel;
+  }
+
+  Future<void> removeOrderChannel(RealtimeChannel channel) async {
+    await _client.removeChannel(channel);
+  }
 
   Future<String> placeOrder({
     required List<CartLine> lines,
