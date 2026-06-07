@@ -4,6 +4,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/app_models.dart';
 
+class NotificationDeliveryException implements Exception {
+  const NotificationDeliveryException(this.message);
+  final String message;
+}
+
 class SupabaseService {
   SupabaseService({SupabaseClient? client}) : _client = client ?? Supabase.instance.client;
   final SupabaseClient _client;
@@ -130,13 +135,26 @@ class SupabaseService {
       _client.rpc('deactivate_device_token', params: {'p_token': token});
 
   Future<void> notifyOrderEvent(String event, String orderId) async {
-    final response = await _client.functions.invoke('send-notification', body: {'event': event, 'order_id': orderId});
-    if (response.status >= 300) throw Exception(_functionMessage(response.data, 'Notification could not be sent.'));
+    await _invokeNotification({'event': event, 'order_id': orderId});
   }
 
   Future<void> sendCustomNotification({required String title, required String body}) async {
-    final response = await _client.functions.invoke('send-notification', body: {'event': 'custom', 'title': title, 'body': body, 'all_customers': true});
-    if (response.status >= 300) throw Exception(_functionMessage(response.data, 'Notification could not be sent.'));
+    await _invokeNotification({'event': 'custom', 'title': title, 'body': body, 'all_customers': true});
+  }
+
+  Future<void> sendTestNotification() async {
+    final data = await _invokeNotification({'event': 'test'});
+    if (data is Map && (data['sent'] as num? ?? 0) == 0) {
+      throw const NotificationDeliveryException('No active notification token was found for this device. Sign out, sign in, and allow notifications.');
+    }
+  }
+
+  Future<dynamic> _invokeNotification(Map<String, dynamic> body) async {
+    final response = await _client.functions.invoke('send-notification', body: body);
+    if (response.status >= 300) {
+      throw NotificationDeliveryException(_functionMessage(response.data, 'Notification delivery is temporarily unavailable. Please try again.'));
+    }
+    return response.data;
   }
 
   Future<void> healthCheck() async {

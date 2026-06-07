@@ -125,7 +125,10 @@ class AppProvider extends ChangeNotifier {
       });
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('lastRole', user!.role.name);
-      unawaited(notification.activate(user!));
+      final notificationStatus = await notification.activate(user!);
+      if (notificationStatus == NotificationActivationStatus.denied) {
+        message = 'Notifications are disabled. Enable them in Android settings to receive order updates.';
+      }
     } else {
       orders = const [];
     }
@@ -215,18 +218,18 @@ class AppProvider extends ChangeNotifier {
     await run(() async {
       id = await data.placeOrder(lines: cartLines, address: address, phone: phone, paymentMethod: paymentMethod, deliveryFee: deliveryFee);
       _cart.clear();
-      unawaited(data.notifyOrderEvent('order_placed', id!).catchError((_) {}));
+      await _notifyOrderEventSafely('order_placed', id!);
     }, success: 'Order placed successfully.');
     return id;
   }
 
   Future<bool> updateOrderStatus(String orderId, OrderStatus status) => _runOrder(orderId, () async {
         await data.updateOrderStatus(orderId, status);
-        unawaited(data.notifyOrderEvent('order_status', orderId).catchError((_) {}));
+        await _notifyOrderEventSafely('order_status', orderId);
       }, 'Order marked ${statusLabelText(status)}.');
   Future<bool> assignRider(String orderId, String riderId) => _runOrder(orderId, () async {
         await data.assignRider(orderId, riderId);
-        unawaited(data.notifyOrderEvent('rider_assigned', orderId).catchError((_) {}));
+        await _notifyOrderEventSafely('rider_assigned', orderId);
       }, 'Rider assigned.');
 
   Future<bool> setRiderAvailability(bool available) => run(() async {
@@ -239,14 +242,25 @@ class AppProvider extends ChangeNotifier {
   Future<bool> sendCustomNotification({required String title, required String body}) =>
       run(() => data.sendCustomNotification(title: title, body: body), success: 'Notification sent to active customer devices.');
 
+  Future<bool> sendTestNotification() =>
+      run(data.sendTestNotification, success: 'Test notification sent. Check this device notification bar.');
+
   void _checkPendingAlerts() {
     if (user == null || !const [UserRole.owner, UserRole.manager, UserRole.counter].contains(user!.role)) return;
     final cutoff = DateTime.now().subtract(Duration(minutes: settings.pendingAlertMinutes));
     for (final order in orders) {
       final pending = const [OrderStatus.received, OrderStatus.accepted, OrderStatus.preparing].contains(order.status);
       if (pending && order.createdAt.isBefore(cutoff) && _pendingAlertsSent.add(order.id)) {
-        unawaited(data.notifyOrderEvent('pending_order', order.id).catchError((_) {}));
+        unawaited(_notifyOrderEventSafely('pending_order', order.id));
       }
+    }
+  }
+
+  Future<void> _notifyOrderEventSafely(String event, String orderId) async {
+    try {
+      await data.notifyOrderEvent(event, orderId);
+    } catch (exception) {
+      debugPrint('Notification event $event failed: ${exception.runtimeType}');
     }
   }
 
@@ -344,6 +358,7 @@ String friendlyError(Object exception) {
     return 'Authentication could not be completed. Please try again.';
   }
   if (exception is FunctionException) return 'The secure server action could not be completed. Please try again.';
+  if (exception is NotificationDeliveryException) return exception.message;
   if (exception is StorageException) return 'The image could not be uploaded. Check the file and try again.';
   if (exception is PostgrestException) {
     final message = exception.message.toLowerCase();

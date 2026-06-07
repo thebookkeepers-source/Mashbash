@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mashbash/models/app_models.dart';
 import 'package:mashbash/providers/app_provider.dart';
+import 'package:mashbash/services/supabase_service.dart';
 import 'package:mashbash/utils/seed_data.dart';
 
 void main() {
@@ -128,6 +129,17 @@ void main() {
 
   test('connection failures never expose raw exception text', () {
     expect(friendlyError(SocketException('failed host lookup')), contains('error connecting to the server'));
+    expect(friendlyError(const NotificationDeliveryException('Notification delivery is temporarily unavailable. Please try again.')), 'Notification delivery is temporarily unavailable. Please try again.');
     expect(friendlyError(Exception('secret database detail')), 'Something went wrong. Please try again.');
+  });
+
+  test('notification preferences default on and map to Supabase settings', () {
+    const defaults = RestaurantSettings();
+    final mapped = RestaurantSettings.fromMap({'delivery_fee': 150});
+
+    expect(defaults.newOrderNotifications, isTrue);
+    expect(defaults.orderStatusNotifications, isTrue);
+    expect(mapped.orderStatusNotifications, isTrue);
+    expect(defaults.toMap()['order_status_notifications'], isTrue);
   });
 }

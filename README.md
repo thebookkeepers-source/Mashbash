@@ -38,17 +38,23 @@ Supabase remains the only backend, database, and authentication provider. Fireba
 
 1. Create a Firebase project and register Android application ID `com.mashbash.app`.
 2. Enable the Firebase Cloud Messaging HTTP v1 API.
-3. Create a Firebase service account key. Store these values only as Supabase Edge Function secrets:
+3. Create a Firebase service account key. Put its complete one-line JSON value in an ignored local environment file:
+
+```dotenv
+FIREBASE_SERVICE_ACCOUNT_JSON=<one-line JSON from the downloaded service account file>
+```
+
+Store that file only as a Supabase Edge Function secret:
 
 ```bash
 supabase secrets set --env-file supabase/.env.fcm
 ```
 
-`supabase/.env.fcm` must stay uncommitted and contain `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, and `FIREBASE_PRIVATE_KEY`. Never put the service account JSON or private key in Flutter, GitHub Actions, or the repository.
+`supabase/.env.fcm` must stay uncommitted. Never put the service account JSON or private key in Flutter, GitHub Actions, or the repository. Existing deployments using the legacy split `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, and `FIREBASE_PRIVATE_KEY` secrets remain supported while rotating to the single JSON secret.
 
 4. Download the Android `google-services.json` for application ID `com.mashbash.app` and place it at `android/app/google-services.json`. The Google Services Gradle plugin supplies the public Android Firebase configuration to the app.
 
-On supported builds the app requests notification permission, stores active FCM tokens in Supabase after login, refreshes them, deactivates them on logout, and opens related order tracking from notification taps. Firebase service-account secrets are still required in Supabase before the Edge Function can deliver pushes.
+On supported builds the app requests notification permission, stores active FCM tokens in Supabase after every role login, refreshes them, deactivates them on logout, shows foreground alerts through the high-priority `mashbash_orders` Android channel, and opens related order tracking from notification taps. Owners can verify the complete path with **Settings > Send test notification to me**. Firebase service-account secrets are still required in Supabase before the Edge Function can deliver pushes.
 
 ## Authentication providers
 

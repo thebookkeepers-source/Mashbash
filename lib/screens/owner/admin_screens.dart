@@ -788,6 +788,7 @@ class _OwnerSettingsScreenState extends State<OwnerSettingsScreen> {
   final notificationTitle = TextEditingController();
   final notificationBody = TextEditingController();
   late bool newOrderNotifications;
+  late bool orderStatusNotifications;
   late bool dailySalesSummary;
 
   @override
@@ -797,6 +798,7 @@ class _OwnerSettingsScreenState extends State<OwnerSettingsScreen> {
     deliveryFee = TextEditingController(text: '${settings.deliveryFee}');
     pendingMinutes = TextEditingController(text: '${settings.pendingAlertMinutes}');
     newOrderNotifications = settings.newOrderNotifications;
+    orderStatusNotifications = settings.orderStatusNotifications;
     dailySalesSummary = settings.dailySalesSummary;
   }
 
@@ -832,6 +834,13 @@ class _OwnerSettingsScreenState extends State<OwnerSettingsScreen> {
                   onChanged: (value) => setState(() => newOrderNotifications = value),
                   title: const Text('New order notifications'),
                 ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: orderStatusNotifications,
+                  onChanged: (value) => setState(() => orderStatusNotifications = value),
+                  title: const Text('Order status notifications'),
+                  subtitle: const Text('Notify customers when their order changes.'),
+                ),
                 TextFormField(
                   controller: pendingMinutes,
                   keyboardType: TextInputType.number,
@@ -858,6 +867,7 @@ class _OwnerSettingsScreenState extends State<OwnerSettingsScreen> {
                     context.read<AppProvider>().saveSettings(RestaurantSettings(
                           deliveryFee: int.parse(deliveryFee.text),
                           newOrderNotifications: newOrderNotifications,
+                          orderStatusNotifications: orderStatusNotifications,
                           pendingAlertMinutes: int.parse(pendingMinutes.text),
                           dailySalesSummary: dailySalesSummary,
                         ));
@@ -865,6 +875,20 @@ class _OwnerSettingsScreenState extends State<OwnerSettingsScreen> {
                 ),
               ]),
             ),
+          ),
+          const SizedBox(height: 18),
+          MashPanel(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Test this device', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+              const SizedBox(height: 5),
+              const Text('Checks this signed-in device token, the Supabase Edge Function, and FCM delivery.'),
+              const SizedBox(height: 12),
+              AsyncButton(
+                label: 'Send test notification to me',
+                icon: Icons.notifications_active_rounded,
+                onPressed: context.read<AppProvider>().sendTestNotification,
+              ),
+            ]),
           ),
           const SizedBox(height: 18),
           MashPanel(

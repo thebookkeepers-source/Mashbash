@@ -255,18 +255,21 @@ class RestaurantSettings {
   const RestaurantSettings({
     this.deliveryFee = 120,
     this.newOrderNotifications = true,
+    this.orderStatusNotifications = true,
     this.pendingAlertMinutes = 15,
     this.dailySalesSummary = false,
   });
 
   final int deliveryFee;
   final bool newOrderNotifications;
+  final bool orderStatusNotifications;
   final int pendingAlertMinutes;
   final bool dailySalesSummary;
 
   factory RestaurantSettings.fromMap(Map<String, dynamic>? map) => RestaurantSettings(
         deliveryFee: (map?['delivery_fee'] as num?)?.round() ?? 120,
         newOrderNotifications: map?['new_order_notifications'] as bool? ?? true,
+        orderStatusNotifications: map?['order_status_notifications'] as bool? ?? true,
         pendingAlertMinutes: (map?['pending_alert_minutes'] as num?)?.round() ?? 15,
         dailySalesSummary: map?['daily_sales_summary'] as bool? ?? false,
       );
@@ -275,6 +278,7 @@ class RestaurantSettings {
         'id': 'main',
         'delivery_fee': deliveryFee,
         'new_order_notifications': newOrderNotifications,
+        'order_status_notifications': orderStatusNotifications,
         'pending_alert_minutes': pendingAlertMinutes,
         'daily_sales_summary': dailySalesSummary,
         'updated_at': DateTime.now().toIso8601String(),

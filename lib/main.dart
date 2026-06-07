@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -14,6 +15,7 @@ import 'screens/customer/customer_screens.dart';
 import 'screens/manager/manager_panel.dart';
 import 'screens/owner/admin_screens.dart';
 import 'screens/rider/rider_panel.dart';
+import 'services/notification_service.dart';
 import 'utils/app_theme.dart';
 import 'widgets/mash_widgets.dart';
 
@@ -37,6 +39,9 @@ Future<void> main() async {
     }
   } catch (_) {
     // FCM setup must never prevent the Supabase-backed app from opening.
+  }
+  if (Firebase.apps.isNotEmpty) {
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   }
   final provider = AppProvider();
   provider.notification.onOrderTap = (orderId) {

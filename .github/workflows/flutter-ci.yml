@@ -36,12 +36,14 @@ jobs:
           test -f supabase/migrations/20260607194500_device_token_policy_lockdown.sql
           test -f supabase/migrations/20260607195500_trigger_function_lockdown.sql
           test -f supabase/migrations/20260607202000_notification_event_deduplication.sql
+          test -f supabase/migrations/20260607210000_notification_delivery_reliability.sql
           test -f supabase/functions/create-staff/index.ts
           test -f supabase/functions/send-notification/index.ts
           test -f lib/screens/rider/rider_panel.dart
           test -f lib/services/connectivity_service.dart
           test -f lib/services/notification_service.dart
           test -f android/app/google-services.json
+          test -f android/app/src/main/res/drawable/mashbash_notification.xml
           test -f assets/branding/app_icon_source.png
           test -f assets/branding/app_icon_foreground.png
           test -f assets/branding/logo.png
@@ -56,6 +58,9 @@ jobs:
           grep -q 'android:roundIcon="@mipmap/ic_launcher_round"' android/app/src/main/AndroidManifest.xml
           grep -q 'id "com.google.gms.google-services" version "4.4.4" apply false' android/settings.gradle
           grep -q 'id "com.google.gms.google-services"' android/app/build.gradle
+          grep -q 'android.permission.POST_NOTIFICATIONS' android/app/src/main/AndroidManifest.xml
+          grep -q 'mashbash_orders' android/app/src/main/AndroidManifest.xml
+          grep -q 'FIREBASE_SERVICE_ACCOUNT_JSON' supabase/functions/send-notification/index.ts
           ! grep -R "BEGIN PRIVATE KEY\\|\"private_key\":" lib android supabase/functions README.md
       - name: Verify Supabase build config
         run: |
