@@ -24,6 +24,8 @@ jobs:
           rm -f android/settings.gradle.kts android/build.gradle.kts android/app/build.gradle.kts
       - name: Install dependencies
         run: flutter pub get
+      - name: Generate Android launcher icons
+        run: dart run flutter_launcher_icons -f flutter_launcher_icons.yaml
       - name: Verify Supabase migration
         run: |
           test -f supabase/migrations/20260606110000_initial_schema.sql
@@ -40,14 +42,18 @@ jobs:
           test -f lib/services/connectivity_service.dart
           test -f lib/services/notification_service.dart
           test -f android/app/google-services.json
-          test -f assets/branding/app_icon.png
+          test -f assets/branding/app_icon_source.png
+          test -f assets/branding/app_icon_foreground.png
           test -f assets/branding/logo.png
+          test ! -f assets/branding/app_icon.png
+          test -f flutter_launcher_icons.yaml
           test -f android/app/src/main/res/mipmap-mdpi/ic_launcher.png
           test -f android/app/src/main/res/mipmap-hdpi/ic_launcher.png
           test -f android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
           test -f android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
           test -f android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-          test ! -f android/app/src/main/res/drawable/ic_launcher_foreground.xml
+          grep -q 'android:icon="@mipmap/ic_launcher"' android/app/src/main/AndroidManifest.xml
+          grep -q 'android:roundIcon="@mipmap/ic_launcher_round"' android/app/src/main/AndroidManifest.xml
           grep -q 'id "com.google.gms.google-services" version "4.4.4" apply false' android/settings.gradle
           grep -q 'id "com.google.gms.google-services"' android/app/build.gradle
           ! grep -R "BEGIN PRIVATE KEY\\|\"private_key\":" lib android supabase/functions README.md

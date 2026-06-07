@@ -6,11 +6,12 @@ import 'package:mashbash/providers/app_provider.dart';
 import 'package:mashbash/utils/seed_data.dart';
 
 void main() {
-  test('new Mashbash branding assets are bundled', () {
-    expect(File('assets/branding/app_icon.png').existsSync(), isTrue);
+  test('Mashbash launcher and in-app branding assets are available', () {
+    expect(File('assets/branding/app_icon_source.png').existsSync(), isTrue);
+    expect(File('assets/branding/app_icon_foreground.png').existsSync(), isTrue);
     expect(File('assets/branding/logo.png').existsSync(), isTrue);
     expect(File('android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png').existsSync(), isTrue);
-    expect(File('android/app/src/main/res/drawable/ic_launcher_foreground.xml').existsSync(), isFalse);
+    expect(File('flutter_launcher_icons.yaml').existsSync(), isTrue);
   });
 
   test('seed menu contains every Mashbash category and correct totals', () {
