@@ -45,6 +45,11 @@ class SupabaseService {
         return rows.map(HomeSlide.fromMap).toList();
       });
 
+  Stream<int> deliveryFee() => _poll(() async {
+        final row = await _client.from('app_settings').select('delivery_fee').eq('id', 'main').maybeSingle();
+        return [((row?['delivery_fee'] as num?)?.round() ?? 120)];
+      }).map((values) => values.first);
+
   Stream<List<MashOrder>> orders({String? customerId, bool riderOnly = false}) => _poll(() async {
         var query = _client.from('orders').select('*, order_items(*), assigned_rider:profiles!orders_assigned_rider_id_fkey(name)');
         if (customerId != null) query = query.eq(riderOnly ? 'assigned_rider_id' : 'customer_id', customerId);
@@ -108,6 +113,7 @@ class SupabaseService {
   Future<void> deleteDeal(String id) => _client.from('deals').delete().eq('id', id);
   Future<void> saveSlide(HomeSlide slide) => _client.from('home_slides').upsert(slide.toMap());
   Future<void> deleteSlide(String id) => _client.from('home_slides').delete().eq('id', id);
+  Future<void> saveDeliveryFee(int amount) => _client.from('app_settings').upsert({'id': 'main', 'delivery_fee': amount, 'updated_at': DateTime.now().toIso8601String()});
 
   Future<void> manageStaff({required String action, required String userId}) async {
     final response = await _client.functions.invoke('create-staff', body: {'action': action, 'user_id': userId});

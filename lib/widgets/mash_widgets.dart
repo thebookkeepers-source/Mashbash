@@ -20,28 +20,50 @@ String statusLabel(OrderStatus status) => switch (status) {
     };
 
 class MashLogo extends StatelessWidget {
-  const MashLogo({super.key, this.compact = false});
+  const MashLogo({super.key, this.compact = false, this.onDark = false});
   final bool compact;
+  final bool onDark;
 
   @override
   Widget build(BuildContext context) => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: compact ? 42 : 62,
-            height: compact ? 42 : 62,
-            decoration: const BoxDecoration(color: MashColors.secondary, shape: BoxShape.circle),
-            child: Icon(Icons.lunch_dining_rounded, color: MashColors.primary, size: compact ? 26 : 38),
-          ),
+          MashMark(size: compact ? 42 : 72),
           const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('MASHBASH', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontSize: compact ? 20 : 30, color: compact ? Colors.white : MashColors.primary, letterSpacing: 1)),
-              Text('Meet.Eat.Repeat', style: TextStyle(fontSize: compact ? 10 : 13, fontWeight: FontWeight.w600, color: MashColors.primary)),
-            ],
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('MASHBASH', maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontSize: compact ? 20 : 30, color: onDark ? Colors.white : MashColors.primary, letterSpacing: 1)),
+                Text('Meet.Eat.Repeat', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: compact ? 10 : 13, fontWeight: FontWeight.w700, color: onDark ? MashColors.secondary : MashColors.primary)),
+              ],
+            ),
           ),
         ],
+      );
+}
+
+class MashMark extends StatelessWidget {
+  const MashMark({super.key, this.size = 64});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: size,
+        height: size,
+        padding: EdgeInsets.all(size * .09),
+        decoration: BoxDecoration(color: MashColors.primary, borderRadius: BorderRadius.circular(size * .23)),
+        child: Container(
+          decoration: BoxDecoration(color: MashColors.background, shape: BoxShape.circle, border: Border.all(color: MashColors.secondary, width: size * .045)),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Text('M', style: TextStyle(color: MashColors.primary, fontSize: size * .48, fontWeight: FontWeight.w900, fontStyle: FontStyle.italic, height: 1)),
+              Positioned(right: size * .12, bottom: size * .15, child: Icon(Icons.local_fire_department_rounded, color: Colors.orange, size: size * .25)),
+            ],
+          ),
+        ),
       );
 }
 
@@ -102,18 +124,21 @@ class EmptyState extends StatelessWidget {
   final String message;
 
   @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 72, color: MashColors.primary.withValues(alpha: .55)),
-              const SizedBox(height: 16),
-              Text(title, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 6),
-              Text(message, textAlign: TextAlign.center, style: const TextStyle(color: Colors.black54)),
-            ],
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          physics: const ClampingScrollPhysics(),
+          padding: const EdgeInsets.all(20),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.hasBoundedHeight ? (constraints.maxHeight - 40).clamp(0, double.infinity).toDouble() : 0),
+            child: Center(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(icon, size: 56, color: MashColors.primary.withValues(alpha: .55)),
+                const SizedBox(height: 12),
+                Text(title, textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                Text(message, textAlign: TextAlign.center, style: const TextStyle(color: Colors.black54)),
+              ]),
+            ),
           ),
         ),
       );
@@ -168,7 +193,7 @@ class SectionHeading extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Row(
         children: [
-          Expanded(child: Text(title, style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: MashColors.primary))),
+          Expanded(child: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: MashColors.primary))),
           if (action != null) action!,
         ],
       );

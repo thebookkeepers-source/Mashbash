@@ -28,6 +28,7 @@ jobs:
         run: |
           test -f supabase/migrations/20260606110000_initial_schema.sql
           test -f supabase/migrations/20260607120000_production_workflows.sql
+          test -f supabase/migrations/20260607160000_delivery_settings.sql
           test -f supabase/functions/create-staff/index.ts
           test -f lib/screens/rider/rider_panel.dart
           ! grep -R "package:firebase_" lib pubspec.yaml

@@ -277,6 +277,18 @@ class HomeSlide {
       };
 }
 
+bool productMatchesQuery(Product product, String query) {
+  final needle = query.trim().toLowerCase();
+  if (needle.isEmpty) return true;
+  return '${product.name} ${product.description} ${product.category}'.toLowerCase().contains(needle);
+}
+
+bool dealMatchesQuery(Deal deal, String query) {
+  final needle = query.trim().toLowerCase();
+  if (needle.isEmpty) return true;
+  return '${deal.name} ${deal.itemNames.join(' ')} deals'.toLowerCase().contains(needle);
+}
+
 Map<String, bool> _permissions(Map<String, dynamic> map) {
   final raw = map['staff_permissions'];
   final permission = raw is List && raw.isNotEmpty ? raw.first as Map : raw is Map ? raw : const {};

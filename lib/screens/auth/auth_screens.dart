@@ -46,7 +46,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                         ),
                         const Padding(padding: EdgeInsets.symmetric(vertical: 14), child: Row(children: [Expanded(child: Divider()), Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('or')), Expanded(child: Divider())])),
-                        TextFormField(controller: _identifier, keyboardType: TextInputType.emailAddress, validator: Validators.emailOrPhone, decoration: const InputDecoration(labelText: 'Customer email / staff mobile', helperText: 'Customers use email. Staff use mobile number.', prefixIcon: Icon(Icons.alternate_email_rounded))),
+                        TextFormField(controller: _identifier, keyboardType: TextInputType.emailAddress, validator: Validators.emailOrPhone, decoration: const InputDecoration(labelText: 'Email or mobile number', prefixIcon: Icon(Icons.alternate_email_rounded))),
                         const SizedBox(height: 12),
                         TextFormField(
                           controller: _password,
@@ -59,7 +59,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           if (_form.currentState!.validate()) context.read<AppProvider>().login(_identifier.text, _password.text);
                         }),
                         TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RegisterScreen())), child: const Text('New here? Create Account')),
-                        const Text('Staff accounts are created securely by the restaurant owner.', style: TextStyle(fontSize: 11, color: Colors.black54), textAlign: TextAlign.center),
                       ]),
                     ),
                   ),

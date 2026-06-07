@@ -1,10 +1,15 @@
+import 'dart:io';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/app_models.dart';
 import '../../providers/app_provider.dart';
+import '../../services/storage_service.dart';
 import '../../utils/app_theme.dart';
 import '../../utils/validators.dart';
 import '../../widgets/mash_widgets.dart';
@@ -31,24 +36,56 @@ class _StaffPanelState extends State<StaffPanel> {
       if (user.can('manageSlides')) const _Destination('Slides', Icons.view_carousel_rounded, SlidesManagementScreen()),
       if (widget.role == UserRole.owner) const _Destination('Team', Icons.groups_rounded, UserManagementScreen()),
       if (user.can('viewReports')) const _Destination('Reports', Icons.bar_chart_rounded, ReportsScreen()),
+      if (widget.role == UserRole.owner) const _Destination('Settings', Icons.settings_rounded, OwnerSettingsScreen()),
     ];
     if (index >= destinations.length) index = 0;
     return Scaffold(
       appBar: AppBar(
-        title: const MashLogo(compact: true),
-        actions: [
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Center(child: Text('${user.name} · ${user.role.name.toUpperCase()}', style: const TextStyle(fontWeight: FontWeight.w700)))),
-          IconButton(onPressed: context.read<AppProvider>().logout, icon: const Icon(Icons.logout_rounded), tooltip: 'Sign out'),
-        ],
+        title: const MashLogo(compact: true, onDark: true),
+        actions: [IconButton(onPressed: context.read<AppProvider>().logout, icon: const Icon(Icons.logout_rounded), tooltip: 'Sign out')],
       ),
       body: Column(children: [const ErrorBanner(), Expanded(child: destinations[index].screen)]),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: index,
-        onDestinationSelected: (value) => setState(() => index = value),
-        destinations: destinations.map((item) => NavigationDestination(icon: Icon(item.icon), label: item.label)).toList(),
-      ),
+      bottomNavigationBar: _StaffBottomNav(destinations: destinations, selected: index, onSelected: (value) => setState(() => index = value)),
     );
   }
+}
+
+class _StaffBottomNav extends StatelessWidget {
+  const _StaffBottomNav({required this.destinations, required this.selected, required this.onSelected});
+  final List<_Destination> destinations;
+  final int selected;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+        top: false,
+        child: Container(
+          height: 66,
+          color: Colors.white,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: destinations.length,
+            itemBuilder: (context, index) {
+              final item = destinations[index];
+              final active = index == selected;
+              return SizedBox(
+                width: 72,
+                child: InkWell(
+                  onTap: () => onSelected(index),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 3),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(item.icon, color: active ? MashColors.primary : Colors.black54),
+                      const SizedBox(height: 3),
+                      Text(item.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10, fontWeight: active ? FontWeight.w900 : FontWeight.w600, color: active ? MashColors.primary : Colors.black54)),
+                    ]),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
 }
 
 class _Destination {
@@ -133,7 +170,7 @@ class _MetricGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) => GridView.count(
         crossAxisCount: MediaQuery.sizeOf(context).width > 760 ? 4 : 2,
-        childAspectRatio: 1.35,
+        childAspectRatio: MediaQuery.textScalerOf(context).scale(1) > 1.1 ? 1.05 : 1.25,
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         crossAxisSpacing: 10,
@@ -144,8 +181,8 @@ class _MetricGrid extends StatelessWidget {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
                     Icon(metric.icon, color: MashColors.primary),
                     const SizedBox(height: 7),
-                    Text(metric.value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-                    Text(metric.label, style: const TextStyle(color: Colors.black54)),
+                    Text(metric.value, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900)),
+                    Text(metric.label, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.black54)),
                   ]),
                 ))
             .toList(),
@@ -359,6 +396,7 @@ class _CategoryEditorState extends State<CategoryEditor> {
   late final image = TextEditingController(text: widget.category?.imageUrl ?? '');
   late final sort = TextEditingController(text: '${widget.category?.sortOrder ?? 0}');
   late bool active = widget.category?.active ?? true;
+  File? pickedImage;
 
   @override
   Widget build(BuildContext context) => _EditorDialog(
@@ -366,14 +404,19 @@ class _CategoryEditorState extends State<CategoryEditor> {
         form: form,
         fields: [
           TextFormField(controller: name, validator: (value) => Validators.requiredText(value, 'Category name'), decoration: const InputDecoration(labelText: 'Category name')),
-          TextFormField(controller: image, decoration: const InputDecoration(labelText: 'Image URL')),
-          TextFormField(controller: sort, keyboardType: TextInputType.number, validator: _number, decoration: const InputDecoration(labelText: 'Sort order')),
+          _ImageUploadField(controller: image, pickedImage: pickedImage, onPick: (file) => setState(() => pickedImage = file)),
+          TextFormField(controller: sort, keyboardType: TextInputType.number, validator: _number, decoration: const InputDecoration(labelText: 'Sort order', helperText: 'Lower numbers appear first on customer home.')),
           SwitchListTile(value: active, onChanged: (value) => setState(() => active = value), title: const Text('Visible to customers')),
         ],
         onSave: () async {
           if (!form.currentState!.validate()) return;
           final id = widget.category?.id ?? '';
-          final saved = await context.read<AppProvider>().run(() => context.read<AppProvider>().data.saveCategory(MenuCategory(id: id, name: name.text.trim(), imageUrl: image.text.trim(), sortOrder: int.parse(sort.text), active: active)), success: 'Category saved.');
+          var imageUrl = image.text.trim();
+          final app = context.read<AppProvider>();
+          final saved = await app.run(() async {
+            if (pickedImage != null) imageUrl = await StorageService().uploadImage('categories', id.isEmpty ? _id(name.text) : id, pickedImage!);
+            await app.data.saveCategory(MenuCategory(id: id, name: name.text.trim(), imageUrl: imageUrl, sortOrder: int.parse(sort.text), active: active));
+          }, success: 'Category saved.');
           if (saved && context.mounted) Navigator.pop(context);
         },
       );
@@ -396,6 +439,7 @@ class _ProductEditorState extends State<ProductEditor> {
   late final sort = TextEditingController(text: '${widget.product?.sortOrder ?? 0}');
   String? categoryId;
   late bool available = widget.product?.available ?? true;
+  File? pickedImage;
 
   @override
   Widget build(BuildContext context) {
@@ -409,15 +453,21 @@ class _ProductEditorState extends State<ProductEditor> {
         DropdownButtonFormField<String>(value: categoryId, items: categories.map((category) => DropdownMenuItem(value: category.id, child: Text(category.name))).toList(), onChanged: (value) => setState(() => categoryId = value), decoration: const InputDecoration(labelText: 'Category')),
         TextFormField(controller: description, maxLines: 3, validator: (value) => Validators.requiredText(value, 'Description'), decoration: const InputDecoration(labelText: 'Description')),
         TextFormField(controller: price, keyboardType: TextInputType.number, validator: _number, decoration: const InputDecoration(labelText: 'Price')),
-        TextFormField(controller: image, decoration: const InputDecoration(labelText: 'Image URL')),
+        _ImageUploadField(controller: image, pickedImage: pickedImage, onPick: (file) => setState(() => pickedImage = file)),
         TextFormField(controller: sort, keyboardType: TextInputType.number, validator: _number, decoration: const InputDecoration(labelText: 'Sort order')),
         SwitchListTile(value: available, onChanged: (value) => setState(() => available = value), title: const Text('Available')),
       ],
       onSave: () async {
         if (!form.currentState!.validate() || categoryId == null) return;
         final category = categories.firstWhere((item) => item.id == categoryId);
-        final saved = await context.read<AppProvider>().run(
-              () => context.read<AppProvider>().data.saveProduct(Product(id: widget.product?.id ?? _id(name.text), categoryId: category.id, name: name.text.trim(), category: category.name, description: description.text.trim(), price: int.parse(price.text), imageUrl: image.text.trim(), available: available, sortOrder: int.parse(sort.text))),
+        final id = widget.product?.id ?? _id(name.text);
+        var imageUrl = image.text.trim();
+        final app = context.read<AppProvider>();
+        final saved = await app.run(
+              () async {
+                if (pickedImage != null) imageUrl = await StorageService().uploadImage('products', id, pickedImage!);
+                await app.data.saveProduct(Product(id: id, categoryId: category.id, name: name.text.trim(), category: category.name, description: description.text.trim(), price: int.parse(price.text), imageUrl: imageUrl, available: available, sortOrder: int.parse(sort.text)));
+              },
               success: 'Product saved.',
             );
         if (saved && context.mounted) Navigator.pop(context);
@@ -467,6 +517,7 @@ class _DealEditorState extends State<DealEditor> {
   late final price = TextEditingController(text: '${widget.deal?.dealPrice ?? ''}');
   late final image = TextEditingController(text: widget.deal?.imageUrl ?? '');
   late bool active = widget.deal?.active ?? true;
+  File? pickedImage;
 
   @override
   Widget build(BuildContext context) => _EditorDialog(
@@ -477,13 +528,19 @@ class _DealEditorState extends State<DealEditor> {
           TextFormField(controller: items, validator: (value) => Validators.requiredText(value, 'Included items'), decoration: const InputDecoration(labelText: 'Items, separated by commas')),
           TextFormField(controller: original, keyboardType: TextInputType.number, validator: _number, decoration: const InputDecoration(labelText: 'Original price')),
           TextFormField(controller: price, keyboardType: TextInputType.number, validator: _number, decoration: const InputDecoration(labelText: 'Deal price')),
-          TextFormField(controller: image, decoration: const InputDecoration(labelText: 'Image URL')),
+          _ImageUploadField(controller: image, pickedImage: pickedImage, onPick: (file) => setState(() => pickedImage = file)),
           SwitchListTile(value: active, onChanged: (value) => setState(() => active = value), title: const Text('Active')),
         ],
         onSave: () async {
           if (!form.currentState!.validate()) return;
-          final saved = await context.read<AppProvider>().run(
-                () => context.read<AppProvider>().data.saveDeal(Deal(id: widget.deal?.id ?? _id(name.text), name: name.text.trim(), itemNames: items.text.split(',').map((item) => item.trim()).where((item) => item.isNotEmpty).toList(), originalPrice: int.parse(original.text), dealPrice: int.parse(price.text), imageUrl: image.text.trim(), active: active)),
+          final id = widget.deal?.id ?? _id(name.text);
+          var imageUrl = image.text.trim();
+          final app = context.read<AppProvider>();
+          final saved = await app.run(
+                () async {
+                  if (pickedImage != null) imageUrl = await StorageService().uploadImage('deals', id, pickedImage!);
+                  await app.data.saveDeal(Deal(id: id, name: name.text.trim(), itemNames: items.text.split(',').map((item) => item.trim()).where((item) => item.isNotEmpty).toList(), originalPrice: int.parse(original.text), dealPrice: int.parse(price.text), imageUrl: imageUrl, active: active));
+                },
                 success: 'Deal saved.',
               );
           if (saved && context.mounted) Navigator.pop(context);
@@ -533,6 +590,7 @@ class _SlideEditorState extends State<SlideEditor> {
   late final sort = TextEditingController(text: '${widget.slide?.sortOrder ?? 0}');
   late String linkType = widget.slide?.linkType ?? 'none';
   late bool active = widget.slide?.active ?? true;
+  File? pickedImage;
 
   @override
   Widget build(BuildContext context) => _EditorDialog(
@@ -541,7 +599,7 @@ class _SlideEditorState extends State<SlideEditor> {
         fields: [
           TextFormField(controller: title, validator: (value) => Validators.requiredText(value, 'Title'), decoration: const InputDecoration(labelText: 'Title')),
           TextFormField(controller: subtitle, decoration: const InputDecoration(labelText: 'Subtitle')),
-          TextFormField(controller: image, validator: (value) => Validators.requiredText(value, 'Image URL'), decoration: const InputDecoration(labelText: 'Image URL')),
+          _ImageUploadField(controller: image, pickedImage: pickedImage, onPick: (file) => setState(() => pickedImage = file), imageRequired: true),
           DropdownButtonFormField<String>(value: linkType, items: const ['none', 'deal', 'product', 'category'].map((item) => DropdownMenuItem(value: item, child: Text(item))).toList(), onChanged: (value) => setState(() => linkType = value!), decoration: const InputDecoration(labelText: 'Link type')),
           TextFormField(controller: linkId, decoration: const InputDecoration(labelText: 'Link ID')),
           TextFormField(controller: sort, keyboardType: TextInputType.number, validator: _number, decoration: const InputDecoration(labelText: 'Sort order')),
@@ -549,8 +607,14 @@ class _SlideEditorState extends State<SlideEditor> {
         ],
         onSave: () async {
           if (!form.currentState!.validate()) return;
-          final saved = await context.read<AppProvider>().run(
-                () => context.read<AppProvider>().data.saveSlide(HomeSlide(id: widget.slide?.id ?? _id(title.text), title: title.text.trim(), subtitle: subtitle.text.trim(), imageUrl: image.text.trim(), linkType: linkType, linkId: linkId.text.trim(), sortOrder: int.parse(sort.text), active: active)),
+          final id = widget.slide?.id ?? _id(title.text);
+          var imageUrl = image.text.trim();
+          final app = context.read<AppProvider>();
+          final saved = await app.run(
+                () async {
+                  if (pickedImage != null) imageUrl = await StorageService().uploadImage('slides', id, pickedImage!);
+                  await app.data.saveSlide(HomeSlide(id: id, title: title.text.trim(), subtitle: subtitle.text.trim(), imageUrl: imageUrl, linkType: linkType, linkId: linkId.text.trim(), sortOrder: int.parse(sort.text), active: active));
+                },
                 success: 'Home slide saved.',
               );
           if (saved && context.mounted) Navigator.pop(context);
@@ -593,6 +657,105 @@ class _EditorDialog extends StatelessWidget {
           ),
         ),
         actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')), FilledButton(onPressed: onSave, child: const Text('Save'))],
+      );
+}
+
+class _ImageUploadField extends StatelessWidget {
+  const _ImageUploadField({required this.controller, required this.pickedImage, required this.onPick, this.imageRequired = false});
+  final TextEditingController controller;
+  final File? pickedImage;
+  final ValueChanged<File> onPick;
+  final bool imageRequired;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      ValueListenableBuilder<TextEditingValue>(
+        valueListenable: controller,
+        builder: (context, value, child) => Container(
+          height: 130,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(color: const Color(0xFFFFE0B2), borderRadius: BorderRadius.circular(16)),
+          child: pickedImage != null
+              ? Image.file(pickedImage!, fit: BoxFit.cover)
+              : value.text.trim().isNotEmpty
+                  ? CachedNetworkImage(imageUrl: value.text.trim(), fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.broken_image_outlined, color: MashColors.primary))
+                  : const Center(child: Icon(Icons.image_outlined, size: 44, color: MashColors.primary)),
+        ),
+      ),
+      const SizedBox(height: 8),
+      OutlinedButton.icon(
+        onPressed: () async {
+          final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 88, maxWidth: 1600);
+          if (image != null) onPick(File(image.path));
+        },
+        icon: const Icon(Icons.upload_rounded),
+        label: Text(pickedImage == null ? 'Upload image' : 'Choose another image'),
+      ),
+      const SizedBox(height: 8),
+      TextFormField(
+        controller: controller,
+        validator: imageRequired ? (value) => (value ?? '').trim().isEmpty && pickedImage == null ? 'Upload an image or enter an image URL' : null : null,
+        decoration: const InputDecoration(labelText: 'Image URL (optional fallback)', prefixIcon: Icon(Icons.link_rounded)),
+      ),
+    ]);
+  }
+}
+
+class OwnerSettingsScreen extends StatefulWidget {
+  const OwnerSettingsScreen({super.key});
+
+  @override
+  State<OwnerSettingsScreen> createState() => _OwnerSettingsScreenState();
+}
+
+class _OwnerSettingsScreenState extends State<OwnerSettingsScreen> {
+  final form = GlobalKey<FormState>();
+  late final TextEditingController deliveryFee;
+
+  @override
+  void initState() {
+    super.initState();
+    deliveryFee = TextEditingController(text: '${context.read<AppProvider>().configuredDeliveryFee}');
+  }
+
+  @override
+  Widget build(BuildContext context) => ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const SectionHeading('Restaurant settings'),
+          const SizedBox(height: 14),
+          MashPanel(
+            child: Form(
+              key: form,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Delivery charge', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+                const SizedBox(height: 5),
+                const Text('This amount is added to every non-empty customer order. The safe default is Rs. 120.'),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: deliveryFee,
+                  keyboardType: TextInputType.number,
+                  validator: (value) {
+                    final amount = int.tryParse(value ?? '');
+                    if (amount == null) return 'Enter a whole number';
+                    if (amount < 0 || amount > 10000) return 'Enter an amount from 0 to 10,000';
+                    return null;
+                  },
+                  decoration: const InputDecoration(labelText: 'Delivery charge', prefixText: 'Rs. '),
+                ),
+                const SizedBox(height: 14),
+                AsyncButton(
+                  label: 'Save delivery charge',
+                  icon: Icons.save_rounded,
+                  onPressed: () {
+                    if (form.currentState!.validate()) context.read<AppProvider>().saveDeliveryFee(int.parse(deliveryFee.text));
+                  },
+                ),
+              ]),
+            ),
+          ),
+        ],
       );
 }
 

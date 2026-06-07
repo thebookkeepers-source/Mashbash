@@ -66,4 +66,15 @@ void main() {
     expect(slide.linkType, 'deal');
     expect(deal.asProduct().id, 'deal:deal-1');
   });
+
+  test('global search matches product details, category, and deals case-insensitively', () {
+    const product = Product(id: 'murgh-masti', name: 'Murgh Masti', category: 'Chickbash', description: 'Single chicken patty', price: 500);
+    const deal = Deal(id: 'lunch', name: 'Lunch Bash', itemNames: ['Murgh Masti'], originalPrice: 700, dealPrice: 600);
+
+    expect(productMatchesQuery(product, 'masti'), isTrue);
+    expect(productMatchesQuery(product, 'CHICKBASH'), isTrue);
+    expect(productMatchesQuery(product, 'chicken patty'), isTrue);
+    expect(dealMatchesQuery(deal, 'lunch'), isTrue);
+    expect(dealMatchesQuery(deal, 'masti'), isTrue);
+  });
 }
