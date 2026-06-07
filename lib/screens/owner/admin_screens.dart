@@ -1,16 +1,11 @@
-import 'dart:io';
-
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/app_models.dart';
 import '../../providers/app_provider.dart';
-import '../../services/storage_service.dart';
 import '../../utils/app_theme.dart';
-import '../../utils/seed_data.dart';
 import '../../utils/validators.dart';
 import '../../widgets/mash_widgets.dart';
 
@@ -29,10 +24,11 @@ class _StaffPanelState extends State<StaffPanel> {
   Widget build(BuildContext context) {
     final user = context.watch<AppProvider>().user!;
     final destinations = <_Destination>[
-      const _Destination('Dashboard', Icons.dashboard_rounded, StaffDashboard()),
+      const _Destination('Home', Icons.dashboard_rounded, StaffDashboard()),
       if (user.can('viewOrders')) const _Destination('Orders', Icons.receipt_long_rounded, StaffOrdersScreen()),
       if (user.can('manageMenu')) const _Destination('Menu', Icons.restaurant_menu_rounded, MenuManagementScreen()),
       if (user.can('manageDeals')) const _Destination('Deals', Icons.local_offer_rounded, DealsManagementScreen()),
+      if (user.can('manageSlides')) const _Destination('Slides', Icons.view_carousel_rounded, SlidesManagementScreen()),
       if (widget.role == UserRole.owner) const _Destination('Team', Icons.groups_rounded, UserManagementScreen()),
       if (user.can('viewReports')) const _Destination('Reports', Icons.bar_chart_rounded, ReportsScreen()),
     ];
@@ -41,11 +37,11 @@ class _StaffPanelState extends State<StaffPanel> {
       appBar: AppBar(
         title: const MashLogo(compact: true),
         actions: [
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Center(child: Text(user.name, style: const TextStyle(fontWeight: FontWeight.w700)))),
-          IconButton(onPressed: context.read<AppProvider>().logout, icon: const Icon(Icons.logout_rounded)),
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Center(child: Text('${user.name} · ${user.role.name.toUpperCase()}', style: const TextStyle(fontWeight: FontWeight.w700)))),
+          IconButton(onPressed: context.read<AppProvider>().logout, icon: const Icon(Icons.logout_rounded), tooltip: 'Sign out'),
         ],
       ),
-      body: destinations[index].screen,
+      body: Column(children: [const ErrorBanner(), Expanded(child: destinations[index].screen)]),
       bottomNavigationBar: NavigationBar(
         selectedIndex: index,
         onDestinationSelected: (value) => setState(() => index = value),
@@ -62,82 +58,97 @@ class _Destination {
   final Widget screen;
 }
 
-class StaffDashboard extends StatelessWidget {
+class StaffDashboard extends StatefulWidget {
   const StaffDashboard({super.key});
 
   @override
+  State<StaffDashboard> createState() => _StaffDashboardState();
+}
+
+class _StaffDashboardState extends State<StaffDashboard> {
+  String period = 'This Week';
+  DateTimeRange? custom;
+
+  @override
   Widget build(BuildContext context) {
-    final orders = context.watch<AppProvider>().orders;
+    final allOrders = context.watch<AppProvider>().orders;
     final now = DateTime.now();
-    final today = orders.where((order) => order.createdAt.year == now.year && order.createdAt.month == now.month && order.createdAt.day == now.day).toList();
-    final sales = today.where((order) => order.status == OrderStatus.delivered).fold<int>(0, (sum, order) => sum + order.total);
+    final range = _periodRange(period, custom);
+    final orders = allOrders.where((order) => !order.createdAt.isBefore(range.start) && order.createdAt.isBefore(range.end)).toList();
+    final sales = orders.where((order) => order.status == OrderStatus.delivered).fold<int>(0, (sum, order) => sum + order.total);
+    final active = orders.where((order) => order.status != OrderStatus.delivered && order.status != OrderStatus.cancelled).length;
+    final start = DateTime(now.year, now.month, now.day);
     final bars = List.generate(7, (index) {
-      final day = DateTime(now.year, now.month, now.day).subtract(Duration(days: 6 - index));
-      final total = orders
-          .where((order) => order.status == OrderStatus.delivered && order.createdAt.year == day.year && order.createdAt.month == day.month && order.createdAt.day == day.day)
-          .fold<int>(0, (sum, order) => sum + order.total);
-      return BarChartGroupData(x: index, barRods: [BarChartRodData(toY: total.toDouble(), color: MashColors.primary, width: 18, borderRadius: BorderRadius.circular(6))]);
+      final day = start.subtract(Duration(days: 6 - index));
+      final total = allOrders.where((order) => order.status == OrderStatus.delivered && _sameDay(order.createdAt, day)).fold<int>(0, (sum, order) => sum + order.total);
+      return BarChartGroupData(x: index, barRods: [BarChartRodData(toY: total.toDouble(), color: MashColors.primary, width: 15, borderRadius: BorderRadius.circular(6))]);
     });
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text('Restaurant overview', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
+        const SectionHeading('Restaurant overview'),
         const SizedBox(height: 14),
-        Row(children: [
-          Expanded(child: _MetricCard(label: "Today's sales", value: money(sales), icon: Icons.payments_rounded)),
-          const SizedBox(width: 12),
-          Expanded(child: _MetricCard(label: "Today's orders", value: '${today.length}', icon: Icons.receipt_long_rounded)),
+        _PeriodField(
+          value: period,
+          onChanged: (value, range) => setState(() {
+            period = value;
+            custom = range;
+          }),
+        ),
+        const SizedBox(height: 14),
+        _MetricGrid(metrics: [
+          _Metric('$period sales', money(sales), Icons.payments_rounded),
+          _Metric('$period orders', '${orders.length}', Icons.receipt_long_rounded),
+          _Metric('Active orders', '$active', Icons.delivery_dining_rounded),
+          _Metric('Completed', '${orders.where((order) => order.status == OrderStatus.delivered).length}', Icons.check_circle_rounded),
         ]),
         const SizedBox(height: 16),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Revenue • Last 7 days', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
-                const SizedBox(height: 20),
-                SizedBox(
-                  height: 220,
-                  child: BarChart(BarChartData(
-                    barGroups: bars,
-                    borderData: FlBorderData(show: false),
-                    gridData: const FlGridData(show: false),
-                    titlesData: const FlTitlesData(topTitles: AxisTitles(), rightTitles: AxisTitles()),
-                  )),
-                ),
-              ],
-            ),
-          ),
+        MashPanel(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Revenue · Last 7 days', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+            const SizedBox(height: 18),
+            SizedBox(height: 210, child: BarChart(BarChartData(barGroups: bars, borderData: FlBorderData(show: false), gridData: const FlGridData(show: false), titlesData: const FlTitlesData(topTitles: AxisTitles(), rightTitles: AxisTitles())))),
+          ]),
         ),
         const SizedBox(height: 16),
-        const Text('Recent orders', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
-        if (orders.isEmpty)
-          const EmptyState(icon: Icons.receipt_long_outlined, title: 'No orders yet', message: 'Incoming customer orders will appear here in real time.')
-        else
-          ...orders.take(5).map((order) => Card(child: ListTile(title: Text(order.customerName, style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text('${order.items.length} items • ${money(order.total)}'), trailing: OrderStatusChip(status: order.status)))),
+        const SectionHeading('Recent orders'),
+        ...allOrders.take(5).map((order) => Card(child: ListTile(title: Text(order.customerName, style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text('${order.items.length} items · ${money(order.total)}'), trailing: OrderStatusChip(status: order.status)))),
+        if (allOrders.isEmpty) const EmptyState(icon: Icons.receipt_long_outlined, title: 'No orders yet', message: 'Incoming customer orders will appear here in real time.'),
       ],
     );
   }
 }
 
-class _MetricCard extends StatelessWidget {
-  const _MetricCard({required this.label, required this.value, required this.icon});
+class _Metric {
+  const _Metric(this.label, this.value, this.icon);
   final String label;
   final String value;
   final IconData icon;
+}
+
+class _MetricGrid extends StatelessWidget {
+  const _MetricGrid({required this.metrics});
+  final List<_Metric> metrics;
 
   @override
-  Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Icon(icon, color: MashColors.primary),
-            const SizedBox(height: 10),
-            Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
-            Text(label, style: const TextStyle(color: Colors.black54)),
-          ]),
-        ),
+  Widget build(BuildContext context) => GridView.count(
+        crossAxisCount: MediaQuery.sizeOf(context).width > 760 ? 4 : 2,
+        childAspectRatio: 1.35,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        children: metrics
+            .map((metric) => MashPanel(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Icon(metric.icon, color: MashColors.primary),
+                    const SizedBox(height: 7),
+                    Text(metric.value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+                    Text(metric.label, style: const TextStyle(color: Colors.black54)),
+                  ]),
+                ))
+            .toList(),
       );
 }
 
@@ -153,103 +164,219 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = context.watch<AppProvider>().user!;
-    final orders = context.watch<AppProvider>().orders.where((order) => filter == null || order.status == filter).toList();
-    return Column(
-      children: [
-        SizedBox(
-          height: 58,
-          child: ListView(
-            padding: const EdgeInsets.all(8),
-            scrollDirection: Axis.horizontal,
-            children: [
-              ChoiceChip(label: const Text('All'), selected: filter == null, onSelected: (_) => setState(() => filter = null)),
-              const SizedBox(width: 6),
-              ...OrderStatus.values.map((status) => Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: ChoiceChip(label: Text(statusLabel(status)), selected: filter == status, onSelected: (_) => setState(() => filter = status)),
-                  )),
-            ],
-          ),
+    final app = context.watch<AppProvider>();
+    final user = app.user!;
+    final orders = app.orders.where((order) => filter == null || order.status == filter).toList();
+    return Column(children: [
+      SizedBox(
+        height: 58,
+        child: ListView(
+          padding: const EdgeInsets.all(8),
+          scrollDirection: Axis.horizontal,
+          children: [
+            ChoiceChip(label: const Text('All'), selected: filter == null, onSelected: (_) => setState(() => filter = null)),
+            const SizedBox(width: 6),
+            ...OrderStatus.values.map((status) => Padding(padding: const EdgeInsets.only(right: 6), child: ChoiceChip(label: Text(statusLabel(status)), selected: filter == status, onSelected: (_) => setState(() => filter = status)))),
+          ],
         ),
-        Expanded(
-          child: orders.isEmpty
-              ? const EmptyState(icon: Icons.inbox_rounded, title: 'No matching orders', message: 'New orders matching this filter will appear automatically.')
-              : ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: orders.length,
-                  itemBuilder: (_, index) {
-                    final order = orders[index];
-                    final nextIndex = order.status.index + 1;
-                    return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(children: [Expanded(child: Text(order.customerName, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17))), OrderStatusChip(status: order.status)]),
-                            Text(order.items.map((item) => '${item['quantity']}× ${item['name']}').join(', ')),
-                            const SizedBox(height: 8),
-                            Text(order.address),
-                            Text('${order.phone} • ${order.paymentMethod} • ${money(order.total)}', style: const TextStyle(fontWeight: FontWeight.w700)),
-                            if (nextIndex < OrderStatus.values.length && user.can('updateOrderStatus')) ...[
-                              const SizedBox(height: 10),
-                              FilledButton.icon(
-                                onPressed: () => context.read<AppProvider>().data.updateOrderStatus(order.id, OrderStatus.values[nextIndex]),
-                                icon: const Icon(Icons.arrow_forward_rounded),
-                                label: Text('Mark ${statusLabel(OrderStatus.values[nextIndex])}'),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
+      ),
+      Expanded(
+        child: orders.isEmpty
+            ? const EmptyState(icon: Icons.inbox_rounded, title: 'No matching orders', message: 'Orders matching this filter will appear automatically.')
+            : ListView.builder(
+                padding: const EdgeInsets.all(12),
+                itemCount: orders.length,
+                itemBuilder: (_, index) => _OrderOperationsCard(order: orders[index], canUpdate: user.can('updateOrderStatus'), canAssign: user.can('assignRiders')),
+              ),
+      ),
+    ]);
+  }
+}
+
+class _OrderOperationsCard extends StatelessWidget {
+  const _OrderOperationsCard({required this.order, required this.canUpdate, required this.canAssign});
+  final MashOrder order;
+  final bool canUpdate;
+  final bool canAssign;
+
+  @override
+  Widget build(BuildContext context) {
+    final next = _nextStaffStatus(order.status);
+    final busy = context.watch<AppProvider>().busyOrders.contains(order.id);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [Expanded(child: Text('${order.customerName} · #${order.id.substring(0, 6).toUpperCase()}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17))), OrderStatusChip(status: order.status)]),
+          const SizedBox(height: 5),
+          Text(order.items.map((item) => '${item['quantity']}× ${item['name']}').join(', ')),
+          const SizedBox(height: 8),
+          Text(order.address),
+          Text('${order.phone} · ${order.paymentMethod} · ${money(order.total)}', style: const TextStyle(fontWeight: FontWeight.w700)),
+          if (order.assignedRiderName.isNotEmpty) Text('Rider: ${order.assignedRiderName}', style: const TextStyle(color: MashColors.success, fontWeight: FontWeight.w700)),
+          if (!busy && order.status == OrderStatus.readyForDelivery && canAssign) ...[
+            const SizedBox(height: 10),
+            FilledButton.icon(onPressed: () => showDialog(context: context, builder: (_) => _RiderAssignmentDialog(order: order)), icon: const Icon(Icons.delivery_dining_rounded), label: const Text('Assign available rider')),
+          ] else if (!busy && next != null && canUpdate) ...[
+            const SizedBox(height: 10),
+            FilledButton.icon(onPressed: () => context.read<AppProvider>().updateOrderStatus(order.id, next), icon: const Icon(Icons.arrow_forward_rounded), label: Text('Mark ${statusLabel(next)}')),
+          ],
+          if (!busy && canUpdate && order.status != OrderStatus.cancelled && order.status != OrderStatus.delivered)
+            TextButton.icon(onPressed: () => context.read<AppProvider>().updateOrderStatus(order.id, OrderStatus.cancelled), icon: const Icon(Icons.cancel_outlined), label: const Text('Cancel order')),
+          if (busy) const Padding(padding: EdgeInsets.all(10), child: LinearProgressIndicator()),
+        ]),
+      ),
     );
   }
 }
 
-class MenuManagementScreen extends StatelessWidget {
+class _RiderAssignmentDialog extends StatelessWidget {
+  const _RiderAssignmentDialog({required this.order});
+  final MashOrder order;
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Assign available rider'),
+        content: SizedBox(
+          width: 440,
+          child: StreamBuilder<List<AppUser>>(
+            stream: context.read<AppProvider>().data.availableRiders(),
+            builder: (context, snapshot) {
+              final riders = snapshot.data ?? const [];
+              if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+              if (riders.isEmpty) return const Text('No riders are available. Ask a rider to switch on availability.');
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: riders
+                    .map((rider) => ListTile(
+                          leading: const CircleAvatar(child: Icon(Icons.delivery_dining_rounded)),
+                          title: Text(rider.name, style: const TextStyle(fontWeight: FontWeight.w800)),
+                          subtitle: Text(rider.phone),
+                          onTap: () async {
+                            final assigned = await context.read<AppProvider>().assignRider(order.id, rider.id);
+                            if (assigned && context.mounted) Navigator.pop(context);
+                          },
+                        ))
+                    .toList(),
+              );
+            },
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+      );
+}
+
+class MenuManagementScreen extends StatefulWidget {
   const MenuManagementScreen({super.key});
 
   @override
+  State<MenuManagementScreen> createState() => _MenuManagementScreenState();
+}
+
+class _MenuManagementScreenState extends State<MenuManagementScreen> {
+  bool categories = false;
+
+  @override
   Widget build(BuildContext context) {
-    final products = context.watch<AppProvider>().products;
+    final app = context.watch<AppProvider>();
     return Scaffold(
-      body: products.isEmpty
-          ? const EmptyState(icon: Icons.restaurant_menu_rounded, title: 'Menu is loading', message: 'The complete Mashbash menu will appear after Supabase connects.')
-          : ListView.builder(
-              padding: const EdgeInsets.all(12),
-              itemCount: products.length,
-              itemBuilder: (_, index) {
-                final product = products[index];
-                return Card(
-                  child: ListTile(
-                    leading: CircleAvatar(backgroundColor: const Color(0xFFFFE0B2), child: Icon(product.available ? Icons.lunch_dining_rounded : Icons.block, color: MashColors.primary)),
-                    title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.w900)),
-                    subtitle: Text('${product.category} • ${money(product.price)} • ${product.available ? 'Available' : 'Unavailable'}'),
-                    trailing: PopupMenuButton<String>(
-                      onSelected: (action) {
-                        if (action == 'edit') showDialog(context: context, builder: (_) => ProductEditor(product: product));
-                        if (action == 'toggle') context.read<AppProvider>().data.saveProduct(Product(id: product.id, name: product.name, category: product.category, description: product.description, price: product.price, imageUrl: product.imageUrl, available: !product.available));
-                        if (action == 'delete') context.read<AppProvider>().data.deleteProduct(product.id);
-                      },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'edit', child: Text('Edit')),
-                        PopupMenuItem(value: 'toggle', child: Text('Toggle availability')),
-                        PopupMenuItem(value: 'delete', child: Text('Delete')),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-      floatingActionButton: FloatingActionButton.extended(onPressed: () => showDialog(context: context, builder: (_) => const ProductEditor()), icon: const Icon(Icons.add), label: const Text('Add product')),
+      body: Column(children: [
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: SegmentedButton<bool>(segments: const [ButtonSegment(value: false, label: Text('Products'), icon: Icon(Icons.lunch_dining_rounded)), ButtonSegment(value: true, label: Text('Categories'), icon: Icon(Icons.category_rounded))], selected: {categories}, onSelectionChanged: (value) => setState(() => categories = value.first)),
+        ),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(12),
+            children: categories
+                ? app.categories.map((category) => _CategoryTile(category: category)).toList()
+                : app.products.map((product) => _ProductTile(product: product)).toList(),
+          ),
+        ),
+      ]),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => showDialog(context: context, builder: (_) => categories ? const CategoryEditor() : const ProductEditor()),
+        icon: const Icon(Icons.add),
+        label: Text(categories ? 'Add category' : 'Add product'),
+      ),
     );
   }
+}
+
+class _CategoryTile extends StatelessWidget {
+  const _CategoryTile({required this.category});
+  final MenuCategory category;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        child: ListTile(
+          leading: CircleAvatar(backgroundImage: category.imageUrl.isEmpty ? null : NetworkImage(category.imageUrl), child: category.imageUrl.isEmpty ? const Icon(Icons.category_rounded) : null),
+          title: Text(category.name, style: const TextStyle(fontWeight: FontWeight.w900)),
+          subtitle: Text('Sort ${category.sortOrder} · ${category.active ? 'Active' : 'Hidden'}'),
+          trailing: _Actions(onEdit: () => showDialog(context: context, builder: (_) => CategoryEditor(category: category)), onDelete: () => context.read<AppProvider>().run(() => context.read<AppProvider>().data.deleteCategory(category.id), success: 'Category deleted.')),
+        ),
+      );
+}
+
+class _ProductTile extends StatelessWidget {
+  const _ProductTile({required this.product});
+  final Product product;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        child: ListTile(
+          leading: CircleAvatar(backgroundImage: product.imageUrl.isEmpty ? null : NetworkImage(product.imageUrl), child: product.imageUrl.isEmpty ? const Icon(Icons.lunch_dining_rounded) : null),
+          title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.w900)),
+          subtitle: Text('${product.category} · ${money(product.price)} · ${product.available ? 'Available' : 'Unavailable'}'),
+          trailing: _Actions(onEdit: () => showDialog(context: context, builder: (_) => ProductEditor(product: product)), onDelete: () => context.read<AppProvider>().run(() => context.read<AppProvider>().data.deleteProduct(product.id), success: 'Product deleted.')),
+        ),
+      );
+}
+
+class _Actions extends StatelessWidget {
+  const _Actions({required this.onEdit, required this.onDelete});
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) => PopupMenuButton<String>(
+        onSelected: (action) => action == 'edit' ? onEdit() : onDelete(),
+        itemBuilder: (_) => const [PopupMenuItem(value: 'edit', child: Text('Edit')), PopupMenuItem(value: 'delete', child: Text('Delete'))],
+      );
+}
+
+class CategoryEditor extends StatefulWidget {
+  const CategoryEditor({super.key, this.category});
+  final MenuCategory? category;
+
+  @override
+  State<CategoryEditor> createState() => _CategoryEditorState();
+}
+
+class _CategoryEditorState extends State<CategoryEditor> {
+  final form = GlobalKey<FormState>();
+  late final name = TextEditingController(text: widget.category?.name ?? '');
+  late final image = TextEditingController(text: widget.category?.imageUrl ?? '');
+  late final sort = TextEditingController(text: '${widget.category?.sortOrder ?? 0}');
+  late bool active = widget.category?.active ?? true;
+
+  @override
+  Widget build(BuildContext context) => _EditorDialog(
+        title: widget.category == null ? 'Add category' : 'Edit category',
+        form: form,
+        fields: [
+          TextFormField(controller: name, validator: (value) => Validators.requiredText(value, 'Category name'), decoration: const InputDecoration(labelText: 'Category name')),
+          TextFormField(controller: image, decoration: const InputDecoration(labelText: 'Image URL')),
+          TextFormField(controller: sort, keyboardType: TextInputType.number, validator: _number, decoration: const InputDecoration(labelText: 'Sort order')),
+          SwitchListTile(value: active, onChanged: (value) => setState(() => active = value), title: const Text('Visible to customers')),
+        ],
+        onSave: () async {
+          if (!form.currentState!.validate()) return;
+          final id = widget.category?.id ?? '';
+          final saved = await context.read<AppProvider>().run(() => context.read<AppProvider>().data.saveCategory(MenuCategory(id: id, name: name.text.trim(), imageUrl: image.text.trim(), sortOrder: int.parse(sort.text), active: active)), success: 'Category saved.');
+          if (saved && context.mounted) Navigator.pop(context);
+        },
+      );
 }
 
 class ProductEditor extends StatefulWidget {
@@ -261,71 +388,42 @@ class ProductEditor extends StatefulWidget {
 }
 
 class _ProductEditorState extends State<ProductEditor> {
-  final _form = GlobalKey<FormState>();
-  late final TextEditingController _name;
-  late final TextEditingController _description;
-  late final TextEditingController _price;
-  late String category;
-  late bool available;
-  File? image;
+  final form = GlobalKey<FormState>();
+  late final name = TextEditingController(text: widget.product?.name ?? '');
+  late final description = TextEditingController(text: widget.product?.description ?? '');
+  late final price = TextEditingController(text: '${widget.product?.price ?? ''}');
+  late final image = TextEditingController(text: widget.product?.imageUrl ?? '');
+  late final sort = TextEditingController(text: '${widget.product?.sortOrder ?? 0}');
+  String? categoryId;
+  late bool available = widget.product?.available ?? true;
 
   @override
-  void initState() {
-    super.initState();
-    _name = TextEditingController(text: widget.product?.name ?? '');
-    _description = TextEditingController(text: widget.product?.description ?? '');
-    _price = TextEditingController(text: widget.product?.price.toString() ?? '');
-    category = widget.product?.category ?? mashCategories.first;
-    available = widget.product?.available ?? true;
+  Widget build(BuildContext context) {
+    final categories = context.watch<AppProvider>().categories;
+    categoryId ??= widget.product?.categoryId.isNotEmpty == true ? widget.product!.categoryId : (categories.isEmpty ? null : categories.first.id);
+    return _EditorDialog(
+      title: widget.product == null ? 'Add product' : 'Edit product',
+      form: form,
+      fields: [
+        TextFormField(controller: name, validator: (value) => Validators.requiredText(value, 'Product name'), decoration: const InputDecoration(labelText: 'Product name')),
+        DropdownButtonFormField<String>(value: categoryId, items: categories.map((category) => DropdownMenuItem(value: category.id, child: Text(category.name))).toList(), onChanged: (value) => setState(() => categoryId = value), decoration: const InputDecoration(labelText: 'Category')),
+        TextFormField(controller: description, maxLines: 3, validator: (value) => Validators.requiredText(value, 'Description'), decoration: const InputDecoration(labelText: 'Description')),
+        TextFormField(controller: price, keyboardType: TextInputType.number, validator: _number, decoration: const InputDecoration(labelText: 'Price')),
+        TextFormField(controller: image, decoration: const InputDecoration(labelText: 'Image URL')),
+        TextFormField(controller: sort, keyboardType: TextInputType.number, validator: _number, decoration: const InputDecoration(labelText: 'Sort order')),
+        SwitchListTile(value: available, onChanged: (value) => setState(() => available = value), title: const Text('Available')),
+      ],
+      onSave: () async {
+        if (!form.currentState!.validate() || categoryId == null) return;
+        final category = categories.firstWhere((item) => item.id == categoryId);
+        final saved = await context.read<AppProvider>().run(
+              () => context.read<AppProvider>().data.saveProduct(Product(id: widget.product?.id ?? _id(name.text), categoryId: category.id, name: name.text.trim(), category: category.name, description: description.text.trim(), price: int.parse(price.text), imageUrl: image.text.trim(), available: available, sortOrder: int.parse(sort.text))),
+              success: 'Product saved.',
+            );
+        if (saved && context.mounted) Navigator.pop(context);
+      },
+    );
   }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-        title: Text(widget.product == null ? 'Add product' : 'Edit product'),
-        content: SizedBox(
-          width: 520,
-          child: Form(
-            key: _form,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(controller: _name, validator: (value) => Validators.requiredText(value, 'Name'), decoration: const InputDecoration(labelText: 'Product name')),
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField(value: category, items: mashCategories.map((item) => DropdownMenuItem(value: item, child: Text(item))).toList(), onChanged: (value) => category = value!, decoration: const InputDecoration(labelText: 'Category')),
-                  const SizedBox(height: 10),
-                  TextFormField(controller: _description, maxLines: 3, validator: (value) => Validators.requiredText(value, 'Description'), decoration: const InputDecoration(labelText: 'Description')),
-                  const SizedBox(height: 10),
-                  TextFormField(controller: _price, keyboardType: TextInputType.number, validator: (value) => int.tryParse(value ?? '') == null ? 'Enter a valid price' : null, decoration: const InputDecoration(labelText: 'Price')),
-                  SwitchListTile(value: available, onChanged: (value) => setState(() => available = value), title: const Text('Available')),
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 82);
-                      if (picked != null) setState(() => image = File(picked.path));
-                    },
-                    icon: const Icon(Icons.image_rounded),
-                    label: Text(image == null ? 'Choose product image' : 'Image selected'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () async {
-              if (!_form.currentState!.validate()) return;
-              final id = widget.product?.id ?? '${_name.text.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-')}-${DateTime.now().millisecondsSinceEpoch}';
-              var imageUrl = widget.product?.imageUrl ?? '';
-              if (image != null) imageUrl = await StorageService().uploadProductImage(id, image!);
-              await context.read<AppProvider>().data.saveProduct(Product(id: id, name: _name.text.trim(), category: category, description: _description.text.trim(), price: int.parse(_price.text), imageUrl: imageUrl, available: available));
-              if (context.mounted) Navigator.pop(context);
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      );
 }
 
 class DealsManagementScreen extends StatelessWidget {
@@ -334,30 +432,21 @@ class DealsManagementScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final deals = context.watch<AppProvider>().deals;
-    return Scaffold(
-      body: deals.isEmpty
-          ? const EmptyState(icon: Icons.local_offer_outlined, title: 'No deals active', message: 'Create a value-packed Mashbash deal for customers.')
-          : ListView(
-              padding: const EdgeInsets.all(12),
-              children: deals
-                  .map((deal) => Card(
-                        child: ListTile(
-                          title: Text(deal.name, style: const TextStyle(fontWeight: FontWeight.w900)),
-                          subtitle: Text('${deal.itemNames.join(' + ')}\n${money(deal.dealPrice)} • ${deal.active ? 'Active' : 'Inactive'}'),
-                          isThreeLine: true,
-                          trailing: PopupMenuButton<String>(
-                            onSelected: (action) {
-                              if (action == 'edit') showDialog(context: context, builder: (_) => DealEditor(deal: deal));
-                              if (action == 'toggle') context.read<AppProvider>().data.saveDeal(Deal(id: deal.id, name: deal.name, itemNames: deal.itemNames, originalPrice: deal.originalPrice, dealPrice: deal.dealPrice, imageUrl: deal.imageUrl, active: !deal.active));
-                              if (action == 'delete') context.read<AppProvider>().data.deleteDeal(deal.id);
-                            },
-                            itemBuilder: (_) => const [PopupMenuItem(value: 'edit', child: Text('Edit')), PopupMenuItem(value: 'toggle', child: Text('Toggle active')), PopupMenuItem(value: 'delete', child: Text('Delete'))],
-                          ),
-                        ),
-                      ))
-                  .toList(),
-            ),
-      floatingActionButton: FloatingActionButton.extended(onPressed: () => showDialog(context: context, builder: (_) => const DealEditor()), icon: const Icon(Icons.add), label: const Text('Create deal')),
+    return _CrudScaffold(
+      empty: deals.isEmpty,
+      emptyState: const EmptyState(icon: Icons.local_offer_outlined, title: 'No deals active', message: 'Create a value-packed Mashbash deal.'),
+      children: deals
+          .map((deal) => Card(
+                child: ListTile(
+                  title: Text(deal.name, style: const TextStyle(fontWeight: FontWeight.w900)),
+                  subtitle: Text('${deal.itemNames.join(' + ')}\n${money(deal.dealPrice)} · ${deal.active ? 'Active' : 'Inactive'}'),
+                  isThreeLine: true,
+                  trailing: _Actions(onEdit: () => showDialog(context: context, builder: (_) => DealEditor(deal: deal)), onDelete: () => context.read<AppProvider>().run(() => context.read<AppProvider>().data.deleteDeal(deal.id), success: 'Deal deleted.')),
+                ),
+              ))
+          .toList(),
+      buttonLabel: 'Create deal',
+      onAdd: () => showDialog(context: context, builder: (_) => const DealEditor()),
     );
   }
 }
@@ -371,53 +460,139 @@ class DealEditor extends StatefulWidget {
 }
 
 class _DealEditorState extends State<DealEditor> {
-  final _form = GlobalKey<FormState>();
-  late final TextEditingController name;
-  late final TextEditingController items;
-  late final TextEditingController original;
-  late final TextEditingController price;
-  late bool active;
+  final form = GlobalKey<FormState>();
+  late final name = TextEditingController(text: widget.deal?.name ?? '');
+  late final items = TextEditingController(text: widget.deal?.itemNames.join(', ') ?? '');
+  late final original = TextEditingController(text: '${widget.deal?.originalPrice ?? ''}');
+  late final price = TextEditingController(text: '${widget.deal?.dealPrice ?? ''}');
+  late final image = TextEditingController(text: widget.deal?.imageUrl ?? '');
+  late bool active = widget.deal?.active ?? true;
 
   @override
-  void initState() {
-    super.initState();
-    name = TextEditingController(text: widget.deal?.name ?? '');
-    items = TextEditingController(text: widget.deal?.itemNames.join(', ') ?? '');
-    original = TextEditingController(text: widget.deal?.originalPrice.toString() ?? '');
-    price = TextEditingController(text: widget.deal?.dealPrice.toString() ?? '');
-    active = widget.deal?.active ?? true;
+  Widget build(BuildContext context) => _EditorDialog(
+        title: widget.deal == null ? 'Create deal' : 'Edit deal',
+        form: form,
+        fields: [
+          TextFormField(controller: name, validator: (value) => Validators.requiredText(value, 'Deal name'), decoration: const InputDecoration(labelText: 'Deal name')),
+          TextFormField(controller: items, validator: (value) => Validators.requiredText(value, 'Included items'), decoration: const InputDecoration(labelText: 'Items, separated by commas')),
+          TextFormField(controller: original, keyboardType: TextInputType.number, validator: _number, decoration: const InputDecoration(labelText: 'Original price')),
+          TextFormField(controller: price, keyboardType: TextInputType.number, validator: _number, decoration: const InputDecoration(labelText: 'Deal price')),
+          TextFormField(controller: image, decoration: const InputDecoration(labelText: 'Image URL')),
+          SwitchListTile(value: active, onChanged: (value) => setState(() => active = value), title: const Text('Active')),
+        ],
+        onSave: () async {
+          if (!form.currentState!.validate()) return;
+          final saved = await context.read<AppProvider>().run(
+                () => context.read<AppProvider>().data.saveDeal(Deal(id: widget.deal?.id ?? _id(name.text), name: name.text.trim(), itemNames: items.text.split(',').map((item) => item.trim()).where((item) => item.isNotEmpty).toList(), originalPrice: int.parse(original.text), dealPrice: int.parse(price.text), imageUrl: image.text.trim(), active: active)),
+                success: 'Deal saved.',
+              );
+          if (saved && context.mounted) Navigator.pop(context);
+        },
+      );
+}
+
+class SlidesManagementScreen extends StatelessWidget {
+  const SlidesManagementScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final slides = context.watch<AppProvider>().slides;
+    return _CrudScaffold(
+      empty: slides.isEmpty,
+      emptyState: const EmptyState(icon: Icons.view_carousel_outlined, title: 'No home slides', message: 'Create the first customer home promotion.'),
+      children: slides
+          .map((slide) => Card(
+                child: ListTile(
+                  title: Text(slide.title, style: const TextStyle(fontWeight: FontWeight.w900)),
+                  subtitle: Text('${slide.subtitle}\nSort ${slide.sortOrder} · ${slide.active ? 'Active' : 'Hidden'}'),
+                  isThreeLine: true,
+                  trailing: _Actions(onEdit: () => showDialog(context: context, builder: (_) => SlideEditor(slide: slide)), onDelete: () => context.read<AppProvider>().run(() => context.read<AppProvider>().data.deleteSlide(slide.id), success: 'Slide deleted.')),
+                ),
+              ))
+          .toList(),
+      buttonLabel: 'Create slide',
+      onAdd: () => showDialog(context: context, builder: (_) => const SlideEditor()),
+    );
   }
+}
+
+class SlideEditor extends StatefulWidget {
+  const SlideEditor({super.key, this.slide});
+  final HomeSlide? slide;
+
+  @override
+  State<SlideEditor> createState() => _SlideEditorState();
+}
+
+class _SlideEditorState extends State<SlideEditor> {
+  final form = GlobalKey<FormState>();
+  late final title = TextEditingController(text: widget.slide?.title ?? '');
+  late final subtitle = TextEditingController(text: widget.slide?.subtitle ?? '');
+  late final image = TextEditingController(text: widget.slide?.imageUrl ?? '');
+  late final linkId = TextEditingController(text: widget.slide?.linkId ?? '');
+  late final sort = TextEditingController(text: '${widget.slide?.sortOrder ?? 0}');
+  late String linkType = widget.slide?.linkType ?? 'none';
+  late bool active = widget.slide?.active ?? true;
+
+  @override
+  Widget build(BuildContext context) => _EditorDialog(
+        title: widget.slide == null ? 'Create slide' : 'Edit slide',
+        form: form,
+        fields: [
+          TextFormField(controller: title, validator: (value) => Validators.requiredText(value, 'Title'), decoration: const InputDecoration(labelText: 'Title')),
+          TextFormField(controller: subtitle, decoration: const InputDecoration(labelText: 'Subtitle')),
+          TextFormField(controller: image, validator: (value) => Validators.requiredText(value, 'Image URL'), decoration: const InputDecoration(labelText: 'Image URL')),
+          DropdownButtonFormField<String>(value: linkType, items: const ['none', 'deal', 'product', 'category'].map((item) => DropdownMenuItem(value: item, child: Text(item))).toList(), onChanged: (value) => setState(() => linkType = value!), decoration: const InputDecoration(labelText: 'Link type')),
+          TextFormField(controller: linkId, decoration: const InputDecoration(labelText: 'Link ID')),
+          TextFormField(controller: sort, keyboardType: TextInputType.number, validator: _number, decoration: const InputDecoration(labelText: 'Sort order')),
+          SwitchListTile(value: active, onChanged: (value) => setState(() => active = value), title: const Text('Active')),
+        ],
+        onSave: () async {
+          if (!form.currentState!.validate()) return;
+          final saved = await context.read<AppProvider>().run(
+                () => context.read<AppProvider>().data.saveSlide(HomeSlide(id: widget.slide?.id ?? _id(title.text), title: title.text.trim(), subtitle: subtitle.text.trim(), imageUrl: image.text.trim(), linkType: linkType, linkId: linkId.text.trim(), sortOrder: int.parse(sort.text), active: active)),
+                success: 'Home slide saved.',
+              );
+          if (saved && context.mounted) Navigator.pop(context);
+        },
+      );
+}
+
+class _CrudScaffold extends StatelessWidget {
+  const _CrudScaffold({required this.empty, required this.emptyState, required this.children, required this.buttonLabel, required this.onAdd});
+  final bool empty;
+  final Widget emptyState;
+  final List<Widget> children;
+  final String buttonLabel;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        body: empty ? emptyState : ListView(padding: const EdgeInsets.all(12), children: children),
+        floatingActionButton: FloatingActionButton.extended(onPressed: onAdd, icon: const Icon(Icons.add), label: Text(buttonLabel)),
+      );
+}
+
+class _EditorDialog extends StatelessWidget {
+  const _EditorDialog({required this.title, required this.form, required this.fields, required this.onSave});
+  final String title;
+  final GlobalKey<FormState> form;
+  final List<Widget> fields;
+  final VoidCallback onSave;
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: Text(widget.deal == null ? 'Create deal' : 'Edit deal'),
+        title: Text(title),
         content: SizedBox(
-          width: 500,
+          width: 520,
           child: Form(
-            key: _form,
+            key: form,
             child: SingleChildScrollView(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                TextFormField(controller: name, validator: (value) => Validators.requiredText(value, 'Deal name'), decoration: const InputDecoration(labelText: 'Deal name')),
-                const SizedBox(height: 10),
-                TextFormField(controller: items, validator: (value) => Validators.requiredText(value, 'Included items'), decoration: const InputDecoration(labelText: 'Items, separated by commas')),
-                const SizedBox(height: 10),
-                TextFormField(controller: original, keyboardType: TextInputType.number, validator: (value) => int.tryParse(value ?? '') == null ? 'Enter a valid price' : null, decoration: const InputDecoration(labelText: 'Original price')),
-                const SizedBox(height: 10),
-                TextFormField(controller: price, keyboardType: TextInputType.number, validator: (value) => int.tryParse(value ?? '') == null ? 'Enter a valid price' : null, decoration: const InputDecoration(labelText: 'Deal price')),
-                SwitchListTile(value: active, onChanged: (value) => setState(() => active = value), title: const Text('Active')),
-              ]),
+              child: Column(mainAxisSize: MainAxisSize.min, children: fields.expand((field) => [field, const SizedBox(height: 10)]).toList()),
             ),
           ),
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(onPressed: () async {
-            if (!_form.currentState!.validate()) return;
-            final id = widget.deal?.id ?? '${name.text.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-')}-${DateTime.now().millisecondsSinceEpoch}';
-            await context.read<AppProvider>().data.saveDeal(Deal(id: id, name: name.text.trim(), itemNames: items.text.split(',').map((item) => item.trim()).where((item) => item.isNotEmpty).toList(), originalPrice: int.parse(original.text), dealPrice: int.parse(price.text), active: active));
-            if (context.mounted) Navigator.pop(context);
-          }, child: const Text('Save')),
-        ],
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')), FilledButton(onPressed: onSave, child: const Text('Save'))],
       );
 }
 
@@ -431,17 +606,30 @@ class UserManagementScreen extends StatelessWidget {
           builder: (context, snapshot) {
             final users = snapshot.data ?? const [];
             if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-            if (users.isEmpty) return const EmptyState(icon: Icons.groups_rounded, title: 'No staff accounts', message: 'Create manager and counter accounts with the rights they need.');
+            if (users.isEmpty) return const EmptyState(icon: Icons.groups_rounded, title: 'No staff accounts', message: 'Create manager, counter, and rider accounts.');
             return ListView(
               padding: const EdgeInsets.all(12),
               children: users
                   .map((user) => Card(
                         child: ListTile(
-                          leading: CircleAvatar(child: Text(user.name.isEmpty ? '?' : user.name[0].toUpperCase())),
+                          leading: CircleAvatar(child: Icon(user.role == UserRole.rider ? Icons.delivery_dining_rounded : Icons.badge_rounded)),
                           title: Text(user.name, style: const TextStyle(fontWeight: FontWeight.w900)),
-                          subtitle: Text('${user.role.name.toUpperCase()} • ${user.phone}\n${user.rights.entries.where((right) => right.value).map((right) => right.key).join(', ')}'),
+                          subtitle: Text('${user.role.name.toUpperCase()} · ${user.phone}\n${user.active ? 'Active' : 'Disabled'}${user.role == UserRole.rider ? ' · ${user.available ? 'Available' : 'Unavailable'}' : ''}'),
                           isThreeLine: true,
-                          trailing: IconButton(onPressed: () => context.read<AppProvider>().data.deleteStaff(user.id), icon: const Icon(Icons.delete_outline, color: MashColors.primary)),
+                          trailing: PopupMenuButton<String>(
+                            onSelected: (action) {
+                              if (action == 'edit') {
+                                showDialog(context: context, builder: (_) => StaffEditor(user: user));
+                              } else {
+                                context.read<AppProvider>().run(() => context.read<AppProvider>().data.manageStaff(action: action, userId: user.id), success: action == 'delete' ? 'Staff account deleted.' : 'Staff account updated.');
+                              }
+                            },
+                            itemBuilder: (_) => [
+                              const PopupMenuItem(value: 'edit', child: Text('Edit account')),
+                              PopupMenuItem(value: user.active ? 'disable' : 'enable', child: Text(user.active ? 'Disable account' : 'Enable account')),
+                              const PopupMenuItem(value: 'delete', child: Text('Delete account')),
+                            ],
+                          ),
                         ),
                       ))
                   .toList(),
@@ -453,90 +641,83 @@ class UserManagementScreen extends StatelessWidget {
 }
 
 class StaffEditor extends StatefulWidget {
-  const StaffEditor({super.key});
+  const StaffEditor({super.key, this.user});
+  final AppUser? user;
 
   @override
   State<StaffEditor> createState() => _StaffEditorState();
 }
 
 class _StaffEditorState extends State<StaffEditor> {
-  final _form = GlobalKey<FormState>();
-  final name = TextEditingController();
-  final phone = TextEditingController();
+  final form = GlobalKey<FormState>();
+  late final TextEditingController name;
+  late final TextEditingController phone;
   final password = TextEditingController();
-  UserRole role = UserRole.manager;
-  final rights = {'viewOrders': true, 'updateOrderStatus': true, 'manageMenu': false, 'manageDeals': false, 'viewReports': false};
+  late UserRole role;
+  final rights = {'viewOrders': true, 'updateOrderStatus': true, 'assignRiders': false, 'manageMenu': false, 'manageDeals': false, 'manageSlides': false, 'viewReports': false};
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-        title: const Text('Create staff account'),
-        content: SizedBox(
-          width: 500,
-          child: Form(
-            key: _form,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(controller: name, validator: (value) => Validators.requiredText(value, 'Name'), decoration: const InputDecoration(labelText: 'Full name')),
-                  const SizedBox(height: 10),
-                  TextFormField(controller: phone, validator: Validators.phone, decoration: const InputDecoration(labelText: 'Mobile number')),
-                  const SizedBox(height: 10),
-                  TextFormField(controller: password, obscureText: true, validator: Validators.password, decoration: const InputDecoration(labelText: 'Temporary password')),
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField<UserRole>(
-                    value: role,
-                    items: const [DropdownMenuItem(value: UserRole.manager, child: Text('Manager')), DropdownMenuItem(value: UserRole.counter, child: Text('Counter'))],
-                    onChanged: (value) => setState(() {
-                      role = value!;
-                      if (role == UserRole.counter) {
-                        rights['viewOrders'] = true;
-                        rights['updateOrderStatus'] = true;
-                      }
-                    }),
-                    decoration: const InputDecoration(labelText: 'Role'),
-                  ),
-                  ...rights.keys.map((right) {
-                    final locked = role == UserRole.counter && (right == 'viewOrders' || right == 'updateOrderStatus');
-                    return CheckboxListTile(
-                      value: rights[right],
-                      onChanged: locked ? null : (value) => setState(() => rights[right] = value ?? false),
-                      title: Text(_rightLabel(right)),
-                      subtitle: locked ? const Text('Required for counter accounts') : null,
-                    );
-                  }),
-                ],
-              ),
-            ),
-          ),
+  void initState() {
+    super.initState();
+    name = TextEditingController(text: widget.user?.name ?? '');
+    phone = TextEditingController(text: widget.user?.phone ?? '');
+    role = widget.user?.role ?? UserRole.manager;
+    if (widget.user != null) rights.addAll(widget.user!.rights);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final locked = role == UserRole.counter;
+    return _EditorDialog(
+      title: widget.user == null ? 'Create staff account' : 'Edit staff account',
+      form: form,
+      fields: [
+        TextFormField(controller: name, validator: (value) => Validators.requiredText(value, 'Name'), decoration: const InputDecoration(labelText: 'Full name')),
+        TextFormField(controller: phone, keyboardType: TextInputType.phone, validator: Validators.phone, decoration: const InputDecoration(labelText: 'Mobile number')),
+        TextFormField(controller: password, obscureText: true, validator: (value) => widget.user != null && (value ?? '').isEmpty ? null : Validators.password(value), decoration: InputDecoration(labelText: widget.user == null ? 'Temporary password' : 'New password (optional)')),
+        DropdownButtonFormField<UserRole>(
+          value: role,
+          items: const [DropdownMenuItem(value: UserRole.manager, child: Text('Manager')), DropdownMenuItem(value: UserRole.counter, child: Text('Counter')), DropdownMenuItem(value: UserRole.rider, child: Text('Rider'))],
+          onChanged: (value) => setState(() {
+            role = value!;
+            if (role == UserRole.counter) {
+              rights['viewOrders'] = true;
+              rights['updateOrderStatus'] = true;
+              rights['assignRiders'] = true;
+            }
+          }),
+          decoration: const InputDecoration(labelText: 'Role'),
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () async {
-              if (!_form.currentState!.validate()) return;
-              final app = context.read<AppProvider>();
-              await app.auth.createStaffAccount(
-                name: name.text.trim(),
-                phone: phone.text.trim(),
-                password: password.text,
-                role: role,
-                rights: Map.from(rights),
-              );
-              if (context.mounted) Navigator.pop(context);
-            },
-            child: const Text('Create'),
-          ),
-        ],
-      );
+        if (role != UserRole.rider)
+          ...rights.keys.map((right) {
+            final requiredRight = locked && const ['viewOrders', 'updateOrderStatus', 'assignRiders'].contains(right);
+            return CheckboxListTile(value: rights[right], onChanged: requiredRight ? null : (value) => setState(() => rights[right] = value ?? false), title: Text(_rightLabel(right)), subtitle: requiredRight ? const Text('Required for counter accounts') : null);
+          }),
+        if (role == UserRole.rider) const ListTile(leading: Icon(Icons.info_outline), title: Text('Riders only see deliveries assigned to them.')),
+      ],
+      onSave: () async {
+        if (!form.currentState!.validate()) return;
+        final app = context.read<AppProvider>();
+        final saved = await app.run(
+          () => widget.user == null
+              ? app.auth.createStaffAccount(name: name.text.trim(), phone: phone.text.trim(), password: password.text, role: role, rights: Map.from(rights)).then((_) {})
+              : app.auth.updateStaffAccount(id: widget.user!.id, name: name.text.trim(), phone: phone.text.trim(), password: password.text, role: role, rights: Map.from(rights)),
+          success: widget.user == null ? 'Staff account created.' : 'Staff account updated.',
+        );
+        if (saved && context.mounted) Navigator.pop(context);
+      },
+    );
+  }
 }
 
 String _rightLabel(String right) => switch (right) {
-      'viewOrders' => 'View Orders',
-      'updateOrderStatus' => 'Update Order Status',
-      'manageMenu' => 'Manage Menu',
-      'manageDeals' => 'Manage Deals',
-      'viewReports' => 'View Reports',
+      'viewOrders' => 'View orders',
+      'updateOrderStatus' => 'Update order status',
+      'assignRiders' => 'Assign riders',
+      'manageMenu' => 'Manage menu and categories',
+      'manageDeals' => 'Manage deals',
+      'manageSlides' => 'Manage home slides',
+      'viewReports' => 'View reports',
       _ => right,
     };
 
@@ -549,42 +730,65 @@ class ReportsScreen extends StatefulWidget {
 
 class _ReportsScreenState extends State<ReportsScreen> {
   String period = 'Today';
+  DateTimeRange? custom;
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final allOrders = context.watch<AppProvider>().orders;
-    final orders = allOrders.where((order) {
-      if (period == 'Today') return order.createdAt.year == now.year && order.createdAt.month == now.month && order.createdAt.day == now.day;
-      if (period == 'This Week') return order.createdAt.isAfter(now.subtract(const Duration(days: 7)));
-      return order.createdAt.isAfter(DateTime(now.year, now.month, 1));
-    }).toList();
-    final revenue = orders.where((order) => order.status == OrderStatus.delivered).fold<int>(0, (sum, order) => sum + order.total);
+    final app = context.watch<AppProvider>();
+    final range = _periodRange(period, custom);
+    final orders = app.orders.where((order) => !order.createdAt.isBefore(range.start) && order.createdAt.isBefore(range.end)).toList();
+    final delivered = orders.where((order) => order.status == OrderStatus.delivered).toList();
+    final revenue = delivered.fold<int>(0, (sum, order) => sum + order.total);
     final counts = <String, int>{};
-    for (final order in orders) {
+    final categorySales = <String, int>{};
+    for (final order in delivered) {
       for (final item in order.items) {
-        counts[item['name'] as String] = (counts[item['name'] as String] ?? 0) + (item['quantity'] as num).round();
+        final name = item['name'] as String? ?? 'Item';
+        final quantity = (item['quantity'] as num? ?? 0).round();
+        final lineTotal = (item['price'] as num? ?? 0).round() * quantity;
+        counts[name] = (counts[name] ?? 0) + quantity;
+        final matches = app.products.where((product) => product.name == name);
+        final category = matches.isEmpty ? 'Deals / Other' : matches.first.category;
+        categorySales[category] = (categorySales[category] ?? 0) + lineTotal;
       }
     }
     final top = counts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
-    final summary = 'Mashbash $period Report\nRevenue: ${money(revenue)}\nOrders: ${orders.length}\nTop items: ${top.take(5).map((item) => '${item.key} (${item.value})').join(', ')}';
+    final categories = categorySales.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final pending = orders.where((order) => order.status != OrderStatus.delivered && order.status != OrderStatus.cancelled).length;
+    final summary = 'Mashbash $period report\nRevenue: ${money(revenue)}\nOrders: ${orders.length}\nCompleted: ${delivered.length}\nPending: $pending\nCancelled: ${orders.where((order) => order.status == OrderStatus.cancelled).length}\nTop items: ${top.take(5).map((item) => '${item.key} (${item.value})').join(', ')}';
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        SegmentedButton<String>(segments: const [ButtonSegment(value: 'Today', label: Text('Today')), ButtonSegment(value: 'This Week', label: Text('Week')), ButtonSegment(value: 'This Month', label: Text('Month'))], selected: {period}, onSelectionChanged: (value) => setState(() => period = value.first)),
-        const SizedBox(height: 16),
-        Row(children: [Expanded(child: _MetricCard(label: 'Revenue', value: money(revenue), icon: Icons.payments_rounded)), const SizedBox(width: 12), Expanded(child: _MetricCard(label: 'Orders', value: '${orders.length}', icon: Icons.receipt_long_rounded))]),
-        const SizedBox(height: 16),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Top selling items', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
-              const SizedBox(height: 8),
-              if (top.isEmpty) const Text('No sales recorded for this period.') else ...top.take(5).map((item) => ListTile(contentPadding: EdgeInsets.zero, title: Text(item.key), trailing: Text('${item.value}', style: const TextStyle(fontWeight: FontWeight.w900)))),
-            ]),
-          ),
+        _PeriodField(
+          value: period,
+          onChanged: (value, range) => setState(() {
+            period = value;
+            custom = range;
+          }),
         ),
+        const SizedBox(height: 16),
+        _MetricGrid(metrics: [
+          _Metric('Revenue', money(revenue), Icons.payments_rounded),
+          _Metric('All orders', '${orders.length}', Icons.receipt_long_rounded),
+          _Metric('Completed', '${delivered.length}', Icons.check_circle_rounded),
+          _Metric('Pending', '$pending', Icons.timelapse_rounded),
+          _Metric('Cancelled', '${orders.where((order) => order.status == OrderStatus.cancelled).length}', Icons.cancel_rounded),
+        ]),
+        const SizedBox(height: 16),
+        MashPanel(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Category sales', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+            if (categories.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('No completed sales in this period.')) else ...categories.map((item) => ListTile(contentPadding: EdgeInsets.zero, title: Text(item.key), trailing: Text(money(item.value), style: const TextStyle(fontWeight: FontWeight.w900)))),
+          ]),
+        ),
+        const SizedBox(height: 16),
+        MashPanel(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Top selling items', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+            if (top.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('No completed sales in this period.')) else ...top.take(8).map((item) => ListTile(contentPadding: EdgeInsets.zero, title: Text(item.key), trailing: Text('${item.value}', style: const TextStyle(fontWeight: FontWeight.w900)))),
+          ]),
+        ),
+        const SizedBox(height: 12),
         ElevatedButton.icon(
           onPressed: () {
             Clipboard.setData(ClipboardData(text: summary));
@@ -597,3 +801,50 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 }
+
+OrderStatus? _nextStaffStatus(OrderStatus status) => switch (status) {
+      OrderStatus.received => OrderStatus.accepted,
+      OrderStatus.accepted => OrderStatus.preparing,
+      OrderStatus.preparing => OrderStatus.readyForDelivery,
+      OrderStatus.readyForDelivery || OrderStatus.assignedToRider || OrderStatus.outForDelivery || OrderStatus.delivered || OrderStatus.cancelled => null,
+    };
+
+class _PeriodField extends StatelessWidget {
+  const _PeriodField({required this.value, required this.onChanged});
+  final String value;
+  final void Function(String value, DateTimeRange? custom) onChanged;
+
+  @override
+  Widget build(BuildContext context) => DropdownButtonFormField<String>(
+        value: value,
+        items: const ['Today', 'Yesterday', 'This Week', 'This Month', 'Last Month', 'Custom'].map((item) => DropdownMenuItem(value: item, child: Text(item))).toList(),
+        onChanged: (selected) async {
+          if (selected == null) return;
+          DateTimeRange? custom;
+          if (selected == 'Custom') {
+            final picked = await showDateRangePicker(context: context, firstDate: DateTime(2024), lastDate: DateTime.now().add(const Duration(days: 1)));
+            if (picked == null) return;
+            custom = DateTimeRange(start: DateTime(picked.start.year, picked.start.month, picked.start.day), end: DateTime(picked.end.year, picked.end.month, picked.end.day).add(const Duration(days: 1)));
+          }
+          onChanged(selected, custom);
+        },
+        decoration: const InputDecoration(labelText: 'Period', prefixIcon: Icon(Icons.date_range_rounded)),
+      );
+}
+
+DateTimeRange _periodRange(String period, DateTimeRange? custom) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  return switch (period) {
+    'Yesterday' => DateTimeRange(start: today.subtract(const Duration(days: 1)), end: today),
+    'This Week' => DateTimeRange(start: today.subtract(Duration(days: now.weekday - 1)), end: today.add(const Duration(days: 1))),
+    'This Month' => DateTimeRange(start: DateTime(now.year, now.month), end: DateTime(now.year, now.month + 1)),
+    'Last Month' => DateTimeRange(start: DateTime(now.year, now.month - 1), end: DateTime(now.year, now.month)),
+    'Custom' => custom ?? DateTimeRange(start: today, end: today.add(const Duration(days: 1))),
+    _ => DateTimeRange(start: today, end: today.add(const Duration(days: 1))),
+  };
+}
+
+bool _sameDay(DateTime left, DateTime right) => left.year == right.year && left.month == right.month && left.day == right.day;
+String _id(String value) => '${value.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-')}-${DateTime.now().millisecondsSinceEpoch}';
+String? _number(String? value) => int.tryParse(value ?? '') == null ? 'Enter a whole number' : null;

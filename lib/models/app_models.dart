@@ -1,9 +1,36 @@
-enum UserRole { customer, owner, manager, counter }
+enum UserRole { customer, owner, manager, counter, rider }
 
-enum OrderStatus { received, processing, outForDelivery, delivered }
+enum OrderStatus {
+  received('received'),
+  accepted('accepted'),
+  preparing('preparing'),
+  readyForDelivery('ready_for_delivery'),
+  assignedToRider('assigned_to_rider'),
+  outForDelivery('out_for_delivery'),
+  delivered('delivered'),
+  cancelled('cancelled');
+
+  const OrderStatus(this.dbValue);
+  final String dbValue;
+
+  static OrderStatus fromDb(String? value) => values.firstWhere(
+        (status) => status.dbValue == value || status.name == value,
+        orElse: () => value == 'processing' ? preparing : received,
+      );
+}
 
 class AppUser {
-  const AppUser({required this.id, required this.name, required this.phone, required this.address, required this.role, this.email = '', this.rights = const {}});
+  const AppUser({
+    required this.id,
+    required this.name,
+    required this.phone,
+    required this.address,
+    required this.role,
+    this.email = '',
+    this.rights = const {},
+    this.active = true,
+    this.available = false,
+  });
 
   final String id;
   final String name;
@@ -12,6 +39,8 @@ class AppUser {
   final String email;
   final UserRole role;
   final Map<String, bool> rights;
+  final bool active;
+  final bool available;
 
   bool can(String right) => role == UserRole.owner || rights[right] == true;
   bool get profileComplete => name.trim().isNotEmpty && phone.trim().isNotEmpty && address.trim().isNotEmpty;
@@ -24,11 +53,20 @@ class AppUser {
         email: map['email'] as String? ?? '',
         role: UserRole.values.firstWhere((role) => role.name == map['role'], orElse: () => UserRole.customer),
         rights: _permissions(map),
+        active: map['active'] as bool? ?? true,
+        available: map['rider_available'] as bool? ?? false,
       );
 
-  Map<String, dynamic> toMap() => {'id': id, 'name': name, 'phone': phone, 'address': address, 'email': email, 'role': role.name, 'updated_at': DateTime.now().toIso8601String()};
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'name': name,
+        'phone': phone,
+        'address': address,
+        'email': email,
+        'updated_at': DateTime.now().toIso8601String(),
+      };
 
-  AppUser copyWith({String? name, String? phone, String? address, Map<String, bool>? rights}) => AppUser(
+  AppUser copyWith({String? name, String? phone, String? address, Map<String, bool>? rights, bool? active, bool? available}) => AppUser(
         id: id,
         name: name ?? this.name,
         phone: phone ?? this.phone,
@@ -36,31 +74,73 @@ class AppUser {
         email: email,
         role: role,
         rights: rights ?? this.rights,
+        active: active ?? this.active,
+        available: available ?? this.available,
       );
 }
 
+class MenuCategory {
+  const MenuCategory({required this.id, required this.name, this.imageUrl = '', this.sortOrder = 0, this.active = true});
+  final String id;
+  final String name;
+  final String imageUrl;
+  final int sortOrder;
+  final bool active;
+
+  factory MenuCategory.fromMap(Map<String, dynamic> map) => MenuCategory(
+        id: map['id'] as String,
+        name: map['name'] as String? ?? '',
+        imageUrl: map['image_url'] as String? ?? map['icon_url'] as String? ?? '',
+        sortOrder: (map['sort_order'] as num?)?.round() ?? 0,
+        active: map['active'] as bool? ?? map['is_active'] as bool? ?? true,
+      );
+
+  Map<String, dynamic> toMap() => {'id': id, 'name': name, 'image_url': imageUrl, 'sort_order': sortOrder, 'active': active};
+}
+
 class Product {
-  const Product({required this.id, required this.name, required this.category, required this.description, required this.price, this.imageUrl = '', this.available = true});
+  const Product({
+    required this.id,
+    required this.name,
+    required this.category,
+    required this.description,
+    required this.price,
+    this.categoryId = '',
+    this.imageUrl = '',
+    this.available = true,
+    this.sortOrder = 0,
+  });
 
   final String id;
+  final String categoryId;
   final String name;
   final String category;
   final String description;
   final int price;
   final String imageUrl;
   final bool available;
+  final int sortOrder;
 
   factory Product.fromMap(Map<String, dynamic> map) => Product(
         id: map['id'] as String,
+        categoryId: map['category_id'] as String? ?? '',
         name: map['name'] as String? ?? '',
         category: map['category'] as String? ?? ((map['categories'] as Map?)?['name'] as String? ?? ''),
         description: map['description'] as String? ?? '',
         price: (map['price'] as num?)?.round() ?? 0,
         imageUrl: map['image_url'] as String? ?? '',
-        available: map['available'] as bool? ?? true,
+        available: map['available'] as bool? ?? map['is_available'] as bool? ?? true,
+        sortOrder: (map['sort_order'] as num?)?.round() ?? 0,
       );
 
-  Map<String, dynamic> toMap() => {'name': name, 'description': description, 'price': price, 'image_url': imageUrl, 'available': available};
+  Map<String, dynamic> toMap() => {
+        'name': name,
+        'description': description,
+        'price': price,
+        'image_url': imageUrl,
+        'available': available,
+        'sort_order': sortOrder,
+      };
 }
 
 class CartLine {
@@ -71,7 +151,24 @@ class CartLine {
 }
 
 class MashOrder {
-  const MashOrder({required this.id, required this.customerId, required this.customerName, required this.phone, required this.address, required this.paymentMethod, required this.items, required this.subtotal, required this.deliveryFee, required this.status, required this.createdAt});
+  const MashOrder({
+    required this.id,
+    required this.customerId,
+    required this.customerName,
+    required this.phone,
+    required this.address,
+    required this.paymentMethod,
+    required this.items,
+    required this.subtotal,
+    required this.deliveryFee,
+    required this.status,
+    required this.createdAt,
+    this.assignedRiderId,
+    this.assignedRiderName = '',
+    this.acceptedBy,
+    this.assignedAt,
+    this.deliveredAt,
+  });
 
   final String id;
   final String customerId;
@@ -84,26 +181,38 @@ class MashOrder {
   final int deliveryFee;
   final OrderStatus status;
   final DateTime createdAt;
+  final String? assignedRiderId;
+  final String assignedRiderName;
+  final String? acceptedBy;
+  final DateTime? assignedAt;
+  final DateTime? deliveredAt;
   int get total => subtotal + deliveryFee;
 
-  factory MashOrder.fromMap(Map<String, dynamic> map) => MashOrder(
-        id: map['id'] as String,
-        customerId: map['customer_id'] as String? ?? '',
-        customerName: map['customer_name'] as String? ?? '',
-        phone: map['phone'] as String? ?? '',
-        address: map['address'] as String? ?? '',
-        paymentMethod: map['payment_method'] as String? ?? '',
-        items: List<Map<String, dynamic>>.from(map['order_items'] as List? ?? const []),
-        subtotal: (map['subtotal'] as num?)?.round() ?? 0,
-        deliveryFee: (map['delivery_fee'] as num?)?.round() ?? 0,
-        status: OrderStatus.values.firstWhere((status) => status.name == map['status'], orElse: () => OrderStatus.received),
-        createdAt: DateTime.tryParse(map['created_at'] as String? ?? '') ?? DateTime.now(),
-      );
+  factory MashOrder.fromMap(Map<String, dynamic> map) {
+    final rider = map['assigned_rider'] as Map?;
+    return MashOrder(
+      id: map['id'] as String,
+      customerId: map['customer_id'] as String? ?? '',
+      customerName: map['customer_name'] as String? ?? '',
+      phone: map['phone'] as String? ?? '',
+      address: map['address'] as String? ?? '',
+      paymentMethod: map['payment_method'] as String? ?? '',
+      items: List<Map<String, dynamic>>.from(map['order_items'] as List? ?? const []),
+      subtotal: (map['subtotal'] as num?)?.round() ?? 0,
+      deliveryFee: (map['delivery_fee'] as num?)?.round() ?? 0,
+      status: OrderStatus.fromDb(map['status'] as String?),
+      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '') ?? DateTime.now(),
+      assignedRiderId: map['assigned_rider_id'] as String?,
+      assignedRiderName: rider?['name'] as String? ?? '',
+      acceptedBy: map['accepted_by'] as String?,
+      assignedAt: DateTime.tryParse(map['assigned_at'] as String? ?? ''),
+      deliveredAt: DateTime.tryParse(map['delivered_at'] as String? ?? ''),
+    );
+  }
 }
 
 class Deal {
   const Deal({required this.id, required this.name, required this.itemNames, required this.originalPrice, required this.dealPrice, this.imageUrl = '', this.active = true});
-
   final String id;
   final String name;
   final List<String> itemNames;
@@ -121,6 +230,51 @@ class Deal {
         imageUrl: map['image_url'] as String? ?? '',
         active: map['active'] as bool? ?? true,
       );
+
+  Product asProduct() => Product(id: 'deal:$id', name: name, category: 'Deals', description: itemNames.join(' + '), price: dealPrice, imageUrl: imageUrl, available: active);
+}
+
+class HomeSlide {
+  const HomeSlide({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    required this.imageUrl,
+    this.linkType = 'none',
+    this.linkId = '',
+    this.sortOrder = 0,
+    this.active = true,
+  });
+  final String id;
+  final String title;
+  final String subtitle;
+  final String imageUrl;
+  final String linkType;
+  final String linkId;
+  final int sortOrder;
+  final bool active;
+
+  factory HomeSlide.fromMap(Map<String, dynamic> map) => HomeSlide(
+        id: map['id'] as String,
+        title: map['title'] as String? ?? '',
+        subtitle: map['subtitle'] as String? ?? '',
+        imageUrl: map['image_url'] as String? ?? '',
+        linkType: map['link_type'] as String? ?? 'none',
+        linkId: map['link_id'] as String? ?? '',
+        sortOrder: (map['sort_order'] as num?)?.round() ?? 0,
+        active: map['active'] as bool? ?? true,
+      );
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'title': title,
+        'subtitle': subtitle,
+        'image_url': imageUrl,
+        'link_type': linkType,
+        'link_id': linkId.isEmpty ? null : linkId,
+        'sort_order': sortOrder,
+        'active': active,
+      };
 }
 
 Map<String, bool> _permissions(Map<String, dynamic> map) {
@@ -129,8 +283,10 @@ Map<String, bool> _permissions(Map<String, dynamic> map) {
   return {
     'viewOrders': permission['view_orders'] as bool? ?? false,
     'updateOrderStatus': permission['update_order_status'] as bool? ?? false,
+    'assignRiders': permission['assign_riders'] as bool? ?? false,
     'manageMenu': permission['manage_menu'] as bool? ?? false,
     'manageDeals': permission['manage_deals'] as bool? ?? false,
+    'manageSlides': permission['manage_slides'] as bool? ?? false,
     'viewReports': permission['view_reports'] as bool? ?? false,
   };
 }
