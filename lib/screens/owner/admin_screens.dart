@@ -669,17 +669,19 @@ class _ImageUploadField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final url = controller.text.trim();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Container(
-        height: 130,
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(color: const Color(0xFFFFE0B2), borderRadius: BorderRadius.circular(16)),
-        child: pickedImage != null
-            ? Image.file(pickedImage!, fit: BoxFit.cover)
-            : url.isNotEmpty
-                ? CachedNetworkImage(imageUrl: url, fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.broken_image_outlined, color: MashColors.primary))
-                : const Center(child: Icon(Icons.image_outlined, size: 44, color: MashColors.primary)),
+      ValueListenableBuilder<TextEditingValue>(
+        valueListenable: controller,
+        builder: (context, value, child) => Container(
+          height: 130,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(color: const Color(0xFFFFE0B2), borderRadius: BorderRadius.circular(16)),
+          child: pickedImage != null
+              ? Image.file(pickedImage!, fit: BoxFit.cover)
+              : value.text.trim().isNotEmpty
+                  ? CachedNetworkImage(imageUrl: value.text.trim(), fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.broken_image_outlined, color: MashColors.primary))
+                  : const Center(child: Icon(Icons.image_outlined, size: 44, color: MashColors.primary)),
+        ),
       ),
       const SizedBox(height: 8),
       OutlinedButton.icon(
