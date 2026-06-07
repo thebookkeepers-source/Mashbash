@@ -14,10 +14,15 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
-def hasReleaseSigning = keystoreProperties['storeFile'] != null &&
+def releaseStoreFile = keystoreProperties['storeFile'] == null ? null : file(keystoreProperties['storeFile'])
+def hasReleaseSigning = releaseStoreFile != null &&
+        releaseStoreFile.exists() &&
         keystoreProperties['storePassword'] != null &&
         keystoreProperties['keyAlias'] != null &&
         keystoreProperties['keyPassword'] != null
+if (System.getenv('MASHBASH_REQUIRE_RELEASE_SIGNING') == 'true' && !hasReleaseSigning) {
+    throw new GradleException('Valid Android release signing configuration is required.')
+}
 
 android {
     namespace = "com.mashbash.app"
@@ -46,7 +51,7 @@ android {
             release {
                 keyAlias keystoreProperties['keyAlias']
                 keyPassword keystoreProperties['keyPassword']
-                storeFile file(keystoreProperties['storeFile'])
+                storeFile releaseStoreFile
                 storePassword keystoreProperties['storePassword']
             }
         }
