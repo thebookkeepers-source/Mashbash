@@ -24,7 +24,7 @@ class _RiderPanelState extends State<RiderPanel> {
     final history = app.orders.where((order) => order.status == OrderStatus.delivered || order.status == OrderStatus.cancelled).toList();
     return Scaffold(
       appBar: AppBar(
-        title: const MashLogo(compact: true),
+        title: const MashLogo(compact: true, onDark: true),
         actions: [IconButton(onPressed: app.logout, icon: const Icon(Icons.logout_rounded))],
       ),
       body: IndexedStack(

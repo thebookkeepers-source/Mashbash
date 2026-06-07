@@ -70,13 +70,17 @@ class _HomeScreenState extends State<HomeScreen> {
     final activeCategories = app.activeCategories;
     categoryId ??= activeCategories.isEmpty ? null : activeCategories.first.id;
     final selected = activeCategories.where((item) => item.id == categoryId).firstOrNull;
-    final showingDeals = categoryId == 'deals';
-    final filtered = app.products
-        .where((product) => product.available && (selected == null || product.categoryId == selected.id) && product.name.toLowerCase().contains(query.toLowerCase()))
-        .toList();
+    final isSearching = query.trim().isNotEmpty;
+    final showingDeals = !isSearching && categoryId == 'deals';
+    final filtered = isSearching
+        ? <Product>[
+            ...app.products.where((product) => product.available && productMatchesQuery(product, query)),
+            ...app.deals.where((deal) => deal.active && dealMatchesQuery(deal, query)).map((deal) => deal.asProduct()),
+          ]
+        : app.products.where((product) => product.available && (selected == null || product.categoryId == selected.id)).toList();
     return Scaffold(
       appBar: AppBar(
-        title: const MashLogo(compact: true),
+        title: const MashLogo(compact: true, onDark: true),
         actions: [
           Badge(
             isLabelVisible: app.cartCount > 0,
@@ -120,19 +124,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              SectionHeading(showingDeals ? 'Mashbash Deals' : (selected?.name ?? 'Menu')),
+              SectionHeading(isSearching ? 'Search results' : (showingDeals ? 'Mashbash Deals' : (selected?.name ?? 'Menu'))),
             ]),
           ),
         ),
         if (showingDeals)
           _DealGrid(deals: app.deals.where((deal) => deal.active).toList())
         else if (filtered.isEmpty)
-          const SliverFillRemaining(child: EmptyState(icon: Icons.search_off_rounded, title: 'Nothing found', message: 'Try another category or search phrase.'))
+          const SliverToBoxAdapter(child: SizedBox(height: 260, child: EmptyState(icon: Icons.search_off_rounded, title: 'Nothing found', message: 'Try another search phrase.')))
         else
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(14, 4, 14, 24),
             sliver: SliverGrid(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisExtent: 294, crossAxisSpacing: 10, mainAxisSpacing: 10),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisExtent: 330, crossAxisSpacing: 10, mainAxisSpacing: 10),
               delegate: SliverChildBuilderDelegate((context, index) => ProductCard(product: filtered[index]), childCount: filtered.length),
             ),
           ),
@@ -241,7 +245,7 @@ class ProductCard extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(9),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              ProductImage(product: product, height: 130),
+              ProductImage(product: product, height: 118),
               const SizedBox(height: 8),
               Text(product.name.toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 17, color: MashColors.primary)),
               Text(product.description, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.black54)),
@@ -269,9 +273,9 @@ class _DealGrid extends StatelessWidget {
   Widget build(BuildContext context) => SliverPadding(
         padding: const EdgeInsets.fromLTRB(14, 4, 14, 24),
         sliver: deals.isEmpty
-            ? const SliverFillRemaining(child: EmptyState(icon: Icons.local_offer_outlined, title: 'No active deals', message: 'Fresh offers are coming soon.'))
+            ? const SliverToBoxAdapter(child: SizedBox(height: 260, child: EmptyState(icon: Icons.local_offer_outlined, title: 'No active deals', message: 'Fresh offers are coming soon.')))
             : SliverGrid(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisExtent: 285, crossAxisSpacing: 10, mainAxisSpacing: 10),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisExtent: 330, crossAxisSpacing: 10, mainAxisSpacing: 10),
                 delegate: SliverChildBuilderDelegate((context, index) => _DealCard(deal: deals[index]), childCount: deals.length),
               ),
       );
@@ -289,7 +293,7 @@ class _DealCard extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(9),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              ProductImage(product: deal.asProduct(), height: 125),
+              ProductImage(product: deal.asProduct(), height: 116),
               const SizedBox(height: 8),
               Text(deal.name.toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 17, color: MashColors.primary)),
               Text(deal.itemNames.join(' + '), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
@@ -311,13 +315,15 @@ class _DealDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) => AlertDialog(
         title: Text(deal.name.toUpperCase()),
-        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          ProductImage(product: deal.asProduct(), height: 180),
-          const SizedBox(height: 12),
-          Text(deal.itemNames.join(' + ')),
-          const SizedBox(height: 8),
-          Text(money(deal.dealPrice), style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: MashColors.primary)),
-        ]),
+        content: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            ProductImage(product: deal.asProduct(), height: 180),
+            const SizedBox(height: 12),
+            Text(deal.itemNames.join(' + ')),
+            const SizedBox(height: 8),
+            Text(money(deal.dealPrice), style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: MashColors.primary)),
+          ]),
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
           FilledButton(onPressed: () {

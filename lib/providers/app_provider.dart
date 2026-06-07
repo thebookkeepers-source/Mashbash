@@ -25,6 +25,7 @@ class AppProvider extends ChangeNotifier {
   List<Deal> deals = const [];
   List<HomeSlide> slides = const [];
   List<MashOrder> orders = const [];
+  int configuredDeliveryFee = 120;
   final Map<String, int> _cart = {};
   final Set<String> busyOrders = {};
   bool initializing = true;
@@ -37,7 +38,7 @@ class AppProvider extends ChangeNotifier {
       .toList();
   int get cartCount => _cart.values.fold(0, (sum, quantity) => sum + quantity);
   int get subtotal => cartLines.fold(0, (sum, line) => sum + line.total);
-  int get deliveryFee => _cart.isEmpty ? 0 : 120;
+  int get deliveryFee => _cart.isEmpty ? 0 : configuredDeliveryFee;
   List<MenuCategory> get activeCategories => categories.where((item) => item.active).toList();
   List<HomeSlide> get activeSlides => slides.where((item) => item.active).toList();
 
@@ -63,6 +64,10 @@ class AppProvider extends ChangeNotifier {
       }),
       data.slides().listen((value) {
         slides = value;
+        notifyListeners();
+      }),
+      data.deliveryFee().listen((value) {
+        configuredDeliveryFee = value;
         notifyListeners();
       }),
     ]);
@@ -176,6 +181,8 @@ class AppProvider extends ChangeNotifier {
         user = user?.copyWith(available: available);
       }, success: available ? 'You are available for deliveries.' : 'You are not accepting new deliveries.');
 
+  Future<bool> saveDeliveryFee(int amount) => run(() => data.saveDeliveryFee(amount), success: 'Delivery charge saved.');
+
   Future<bool> _runOrder(String id, Future<void> Function() action, String success) async {
     busyOrders.add(id);
     error = null;
@@ -230,6 +237,7 @@ String friendlyError(Object exception) {
     return 'Authentication could not be completed. Please try again.';
   }
   if (exception is FunctionException) return 'The secure server action could not be completed. Please try again.';
+  if (exception is StorageException) return 'The image could not be uploaded. Check the file and try again.';
   if (exception is PostgrestException) {
     final message = exception.message.toLowerCase();
     if (message.contains('permission') || message.contains('policy')) return 'You do not have permission to perform this action.';

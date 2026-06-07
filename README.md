@@ -62,6 +62,9 @@ Counters always receive View Orders, Update Order Status, and Assign Riders righ
 ## Operations
 
 - Owner and permitted manager/counter accounts can manage every active or inactive category, product, deal, and home slide.
+- Owners can upload category, product, deal, and slide images to the public `product-images` bucket or keep an optional image URL fallback.
+- Owners control customer category sequence with each category's sort order.
+- Owners configure the delivery charge under Settings. New installations default to **Rs. 120**, and the database enforces the configured charge when an order is created.
 - Orders follow Received, Accepted, Preparing, Ready for Delivery, Assigned to Rider, Out for Delivery, and Completed.
 - Ready orders can be assigned only to active, available riders.
 - Dashboard and reports support Today, Yesterday, This Week, This Month, Last Month, and custom date ranges.
