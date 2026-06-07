@@ -6,6 +6,13 @@ import 'package:mashbash/providers/app_provider.dart';
 import 'package:mashbash/utils/seed_data.dart';
 
 void main() {
+  test('new Mashbash branding assets are bundled', () {
+    expect(File('assets/branding/app_icon.png').existsSync(), isTrue);
+    expect(File('assets/branding/logo.png').existsSync(), isTrue);
+    expect(File('android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png').existsSync(), isTrue);
+    expect(File('android/app/src/main/res/drawable/ic_launcher_foreground.xml').existsSync(), isFalse);
+  });
+
   test('seed menu contains every Mashbash category and correct totals', () {
     expect(mashMenu.length, 19);
     expect(mashCategories.every((category) => mashMenu.any((product) => product.category == category)), isTrue);

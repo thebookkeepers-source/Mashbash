@@ -49,20 +49,14 @@ class MashMark extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => SizedBox(
         width: size,
         height: size,
-        padding: EdgeInsets.all(size * .09),
-        decoration: BoxDecoration(color: MashColors.primary, borderRadius: BorderRadius.circular(size * .23)),
-        child: Container(
-          decoration: BoxDecoration(color: MashColors.background, shape: BoxShape.circle, border: Border.all(color: MashColors.secondary, width: size * .045)),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Text('M', style: TextStyle(color: MashColors.primary, fontSize: size * .48, fontWeight: FontWeight.w900, fontStyle: FontStyle.italic, height: 1)),
-              Positioned(right: size * .12, bottom: size * .15, child: Icon(Icons.local_fire_department_rounded, color: Colors.orange, size: size * .25)),
-            ],
-          ),
+        child: Image.asset(
+          'assets/branding/logo.png',
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+          semanticLabel: 'Mashbash logo',
         ),
       );
 }
