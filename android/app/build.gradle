@@ -4,24 +4,23 @@ plugins {
     id "com.android.application"
     id "org.jetbrains.kotlin.android"
     id "dev.flutter.flutter-gradle-plugin"
+    id "com.google.gms.google-services"
 }
 
-// Release signing is optional for local/debug/CI builds.
-// When android/key.properties exists, release builds use the private keystore.
 def keystoreProperties = new Properties()
-def keystorePropertiesFile = rootProject.file('key.properties')
+def keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
 }
 
-def releaseStoreFile = keystoreProperties['storeFile'] == null ? null : file(keystoreProperties['storeFile'])
+def releaseStoreFile = keystoreProperties["storeFile"] == null ? null : file(keystoreProperties["storeFile"])
 def hasReleaseSigning = releaseStoreFile != null &&
         releaseStoreFile.exists() &&
-        keystoreProperties['storePassword'] != null &&
-        keystoreProperties['keyAlias'] != null &&
-        keystoreProperties['keyPassword'] != null
-if (System.getenv('MASHBASH_REQUIRE_RELEASE_SIGNING') == 'true' && !hasReleaseSigning) {
-    throw new GradleException('Valid Android release signing configuration is required.')
+        keystoreProperties["storePassword"] != null &&
+        keystoreProperties["keyAlias"] != null &&
+        keystoreProperties["keyPassword"] != null
+if (System.getenv("MASHBASH_REQUIRE_RELEASE_SIGNING") == "true" && !hasReleaseSigning) {
+    throw new GradleException("Valid Android release signing configuration is required.")
 }
 
 android {
@@ -30,6 +29,7 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        coreLibraryDesugaringEnabled true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -44,15 +44,16 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        multiDexEnabled true
     }
 
     signingConfigs {
         if (hasReleaseSigning) {
             release {
-                keyAlias keystoreProperties['keyAlias']
-                keyPassword keystoreProperties['keyPassword']
-                storeFile releaseStoreFile
-                storePassword keystoreProperties['storePassword']
+                keyAlias = keystoreProperties["keyAlias"]
+                keyPassword = keystoreProperties["keyPassword"]
+                storeFile = releaseStoreFile
+                storePassword = keystoreProperties["storePassword"]
             }
         }
     }
@@ -62,6 +63,10 @@ android {
             signingConfig = hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
         }
     }
+}
+
+dependencies {
+    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"
 }
 
 flutter {

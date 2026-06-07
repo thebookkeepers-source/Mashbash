@@ -13,10 +13,28 @@ enum OrderStatus {
   const OrderStatus(this.dbValue);
   final String dbValue;
 
-  static OrderStatus fromDb(String? value) => values.firstWhere(
-        (status) => status.dbValue == value || status.name == value,
-        orElse: () => value == 'processing' ? preparing : received,
-      );
+  static OrderStatus fromDb(String? value) {
+    final normalized = (value ?? '').trim().toLowerCase().replaceAll(RegExp(r'[\s-]+'), '_');
+    return switch (normalized) {
+      'accepted' => accepted,
+      'processing' || 'preparing' || 'prep' => preparing,
+      'ready_for_delivery' || 'readyfordelivery' || 'ready' => readyForDelivery,
+      'assigned_to_rider' || 'assignedtorider' || 'assigned' => assignedToRider,
+      'out_for_delivery' || 'outfordelivery' || 'picked_up' || 'pickedup' => outForDelivery,
+      'complete' || 'completed' || 'delivered' => delivered,
+      'canceled' || 'cancelled' => cancelled,
+      _ => received,
+    };
+  }
+
+  bool get isActive => switch (this) {
+        received || accepted || preparing || readyForDelivery || assignedToRider || outForDelivery => true,
+        delivered || cancelled => false,
+      };
+
+  bool get isTerminal => !isActive;
+  bool get isCompleted => this == delivered;
+  bool get isCancelled => this == cancelled;
 }
 
 class AppUser {
@@ -80,12 +98,15 @@ class AppUser {
 }
 
 class MenuCategory {
-  const MenuCategory({required this.id, required this.name, this.imageUrl = '', this.sortOrder = 0, this.active = true});
+  const MenuCategory({required this.id, required this.name, this.imageUrl = '', this.sortOrder = 0, this.active = true, this.archivedAt});
   final String id;
   final String name;
   final String imageUrl;
   final int sortOrder;
   final bool active;
+  final DateTime? archivedAt;
+  bool get archived => archivedAt != null;
+  bool get customerVisible => active && !archived;
 
   factory MenuCategory.fromMap(Map<String, dynamic> map) => MenuCategory(
         id: map['id'] as String,
@@ -93,9 +114,10 @@ class MenuCategory {
         imageUrl: map['image_url'] as String? ?? map['icon_url'] as String? ?? '',
         sortOrder: (map['sort_order'] as num?)?.round() ?? 0,
         active: map['active'] as bool? ?? map['is_active'] as bool? ?? true,
+        archivedAt: DateTime.tryParse(map['archived_at'] as String? ?? ''),
       );
 
-  Map<String, dynamic> toMap() => {'id': id, 'name': name, 'image_url': imageUrl, 'sort_order': sortOrder, 'active': active};
+  Map<String, dynamic> toMap() => {'id': id, 'name': name, 'image_url': imageUrl, 'sort_order': sortOrder, 'active': active, 'archived_at': archivedAt?.toIso8601String()};
 }
 
 class Product {
@@ -109,6 +131,8 @@ class Product {
     this.imageUrl = '',
     this.available = true,
     this.sortOrder = 0,
+    this.categoryVisible = true,
+    this.archivedAt,
   });
 
   final String id;
@@ -120,6 +144,10 @@ class Product {
   final String imageUrl;
   final bool available;
   final int sortOrder;
+  final bool categoryVisible;
+  final DateTime? archivedAt;
+  bool get archived => archivedAt != null;
+  bool get customerVisible => available && categoryVisible && !archived;
 
   factory Product.fromMap(Map<String, dynamic> map) => Product(
         id: map['id'] as String,
@@ -131,6 +159,8 @@ class Product {
         imageUrl: map['image_url'] as String? ?? '',
         available: map['available'] as bool? ?? map['is_available'] as bool? ?? true,
         sortOrder: (map['sort_order'] as num?)?.round() ?? 0,
+        categoryVisible: ((map['categories'] as Map?)?['active'] as bool? ?? true) && (map['categories'] as Map?)?['archived_at'] == null,
+        archivedAt: DateTime.tryParse(map['archived_at'] as String? ?? ''),
       );
 
   Map<String, dynamic> toMap() => {
@@ -140,6 +170,7 @@ class Product {
         'image_url': imageUrl,
         'available': available,
         'sort_order': sortOrder,
+        'archived_at': archivedAt?.toIso8601String(),
       };
 }
 
@@ -188,6 +219,33 @@ class MashOrder {
   final DateTime? deliveredAt;
   int get total => subtotal + deliveryFee;
 
+  MashOrder copyWith({
+    OrderStatus? status,
+    String? assignedRiderId,
+    String? assignedRiderName,
+    String? acceptedBy,
+    DateTime? assignedAt,
+    DateTime? deliveredAt,
+  }) =>
+      MashOrder(
+        id: id,
+        customerId: customerId,
+        customerName: customerName,
+        phone: phone,
+        address: address,
+        paymentMethod: paymentMethod,
+        items: items,
+        subtotal: subtotal,
+        deliveryFee: deliveryFee,
+        status: status ?? this.status,
+        createdAt: createdAt,
+        assignedRiderId: assignedRiderId ?? this.assignedRiderId,
+        assignedRiderName: assignedRiderName ?? this.assignedRiderName,
+        acceptedBy: acceptedBy ?? this.acceptedBy,
+        assignedAt: assignedAt ?? this.assignedAt,
+        deliveredAt: deliveredAt ?? this.deliveredAt,
+      );
+
   factory MashOrder.fromMap(Map<String, dynamic> map) {
     final rider = map['assigned_rider'] as Map?;
     return MashOrder(
@@ -212,7 +270,7 @@ class MashOrder {
 }
 
 class Deal {
-  const Deal({required this.id, required this.name, required this.itemNames, required this.originalPrice, required this.dealPrice, this.imageUrl = '', this.active = true});
+  const Deal({required this.id, required this.name, required this.itemNames, required this.originalPrice, required this.dealPrice, this.imageUrl = '', this.active = true, this.archivedAt});
   final String id;
   final String name;
   final List<String> itemNames;
@@ -220,6 +278,9 @@ class Deal {
   final int dealPrice;
   final String imageUrl;
   final bool active;
+  final DateTime? archivedAt;
+  bool get archived => archivedAt != null;
+  bool get customerVisible => active && !archived;
 
   factory Deal.fromMap(Map<String, dynamic> map) => Deal(
         id: map['id'] as String,
@@ -229,9 +290,44 @@ class Deal {
         dealPrice: (map['deal_price'] as num?)?.round() ?? 0,
         imageUrl: map['image_url'] as String? ?? '',
         active: map['active'] as bool? ?? true,
+        archivedAt: DateTime.tryParse(map['archived_at'] as String? ?? ''),
       );
 
-  Product asProduct() => Product(id: 'deal:$id', name: name, category: 'Deals', description: itemNames.join(' + '), price: dealPrice, imageUrl: imageUrl, available: active);
+  Product asProduct() => Product(id: 'deal:$id', name: name, category: 'Deals', description: itemNames.join(' + '), price: dealPrice, imageUrl: imageUrl, available: customerVisible, archivedAt: archivedAt);
+}
+
+class RestaurantSettings {
+  const RestaurantSettings({
+    this.deliveryFee = 120,
+    this.newOrderNotifications = true,
+    this.orderStatusNotifications = true,
+    this.pendingAlertMinutes = 15,
+    this.dailySalesSummary = false,
+  });
+
+  final int deliveryFee;
+  final bool newOrderNotifications;
+  final bool orderStatusNotifications;
+  final int pendingAlertMinutes;
+  final bool dailySalesSummary;
+
+  factory RestaurantSettings.fromMap(Map<String, dynamic>? map) => RestaurantSettings(
+        deliveryFee: (map?['delivery_fee'] as num?)?.round() ?? 120,
+        newOrderNotifications: map?['new_order_notifications'] as bool? ?? true,
+        orderStatusNotifications: map?['order_status_notifications'] as bool? ?? true,
+        pendingAlertMinutes: (map?['pending_alert_minutes'] as num?)?.round() ?? 15,
+        dailySalesSummary: map?['daily_sales_summary'] as bool? ?? false,
+      );
+
+  Map<String, dynamic> toMap() => {
+        'id': 'main',
+        'delivery_fee': deliveryFee,
+        'new_order_notifications': newOrderNotifications,
+        'order_status_notifications': orderStatusNotifications,
+        'pending_alert_minutes': pendingAlertMinutes,
+        'daily_sales_summary': dailySalesSummary,
+        'updated_at': DateTime.now().toIso8601String(),
+      };
 }
 
 class HomeSlide {
@@ -275,6 +371,18 @@ class HomeSlide {
         'sort_order': sortOrder,
         'active': active,
       };
+}
+
+bool productMatchesQuery(Product product, String query) {
+  final needle = query.trim().toLowerCase();
+  if (needle.isEmpty) return true;
+  return '${product.name} ${product.description} ${product.category}'.toLowerCase().contains(needle);
+}
+
+bool dealMatchesQuery(Deal deal, String query) {
+  final needle = query.trim().toLowerCase();
+  if (needle.isEmpty) return true;
+  return '${deal.name} ${deal.itemNames.join(' ')} deals'.toLowerCase().contains(needle);
 }
 
 Map<String, bool> _permissions(Map<String, dynamic> map) {
