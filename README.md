@@ -2,7 +2,7 @@
 
 Mashbash is a Flutter Android food-delivery and restaurant-operations app built around **Meet.Eat.Repeat**. A single APK silently routes customers, owners, managers, counters, and riders from `public.profiles.role`.
 
-Customers use email/password or Google OAuth. Staff sign in with their mobile number and password; the app converts the number to a private Auth email alias, while passwords remain entirely inside Supabase Auth.
+Customers and owners use email/password. Manager, counter, and rider accounts sign in with their mobile number and password; the app converts the number to a private Auth email alias, while passwords remain entirely inside Supabase Auth. Google OAuth code remains available but its login button is currently hidden behind a disabled feature flag until provider setup is completed.
 
 ## Supabase setup
 
@@ -60,7 +60,7 @@ On supported builds the app requests notification permission, stores active FCM 
 
 Email/password authentication is enabled by default. Decide whether customers must confirm email under **Authentication > Providers > Email**.
 
-To enable Google:
+Google login is currently hidden by `FeatureFlags.googleSignIn` in `lib/utils/feature_flags.dart`. To enable Google later, complete the provider setup below and then enable that flag:
 
 1. Create a Google OAuth web client in Google Cloud.
 2. Add Supabase's callback URL, shown under **Authentication > Providers > Google**, as an authorized redirect URI.

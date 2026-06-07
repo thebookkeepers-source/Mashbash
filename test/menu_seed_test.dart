@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mashbash/models/app_models.dart';
 import 'package:mashbash/providers/app_provider.dart';
 import 'package:mashbash/services/supabase_service.dart';
+import 'package:mashbash/utils/feature_flags.dart';
 import 'package:mashbash/utils/seed_data.dart';
 
 void main() {
@@ -13,6 +14,15 @@ void main() {
     expect(File('assets/branding/logo.png').existsSync(), isTrue);
     expect(File('android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png').existsSync(), isTrue);
     expect(File('flutter_launcher_icons.yaml').existsSync(), isTrue);
+  });
+
+  test('Google login remains hidden until OAuth setup is enabled', () {
+    final authScreen = File('lib/screens/auth/auth_screens.dart').readAsStringSync();
+    final authService = File('lib/services/auth_service.dart').readAsStringSync();
+
+    expect(FeatureFlags.googleSignIn, isFalse);
+    expect(authScreen, contains('FeatureFlags.googleSignIn'));
+    expect(authService, contains('signInWithGoogle'));
   });
 
   test('seed menu contains every Mashbash category and correct totals', () {

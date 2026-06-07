@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/app_provider.dart';
 import '../../utils/app_theme.dart';
+import '../../utils/feature_flags.dart';
 import '../../utils/validators.dart';
 import '../../widgets/mash_widgets.dart';
 
@@ -17,6 +18,13 @@ class _LoginScreenState extends State<LoginScreen> {
   final _identifier = TextEditingController();
   final _password = TextEditingController();
   bool _obscure = true;
+
+  @override
+  void dispose() {
+    _identifier.dispose();
+    _password.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -39,13 +47,15 @@ class _LoginScreenState extends State<LoginScreen> {
                         const Text('Great food and smooth service, all in one place.', textAlign: TextAlign.center),
                         const SizedBox(height: 22),
                         const ErrorBanner(),
-                        OutlinedButton.icon(
-                          onPressed: context.watch<AppProvider>().busy ? null : context.read<AppProvider>().googleLogin,
-                          icon: const Icon(Icons.g_mobiledata_rounded, size: 30),
-                          label: const Text('Continue with Google'),
-                          style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                        ),
-                        const Padding(padding: EdgeInsets.symmetric(vertical: 14), child: Row(children: [Expanded(child: Divider()), Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('or')), Expanded(child: Divider())])),
+                        if (FeatureFlags.googleSignIn) ...[
+                          OutlinedButton.icon(
+                            onPressed: context.watch<AppProvider>().busy ? null : context.read<AppProvider>().googleLogin,
+                            icon: const Icon(Icons.g_mobiledata_rounded, size: 30),
+                            label: const Text('Continue with Google'),
+                            style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                          ),
+                          const Padding(padding: EdgeInsets.symmetric(vertical: 14), child: Row(children: [Expanded(child: Divider()), Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('or')), Expanded(child: Divider())])),
+                        ],
                         TextFormField(controller: _identifier, keyboardType: TextInputType.emailAddress, validator: Validators.emailOrPhone, decoration: const InputDecoration(labelText: 'Email or mobile number', prefixIcon: Icon(Icons.alternate_email_rounded))),
                         const SizedBox(height: 12),
                         TextFormField(
@@ -55,9 +65,12 @@ class _LoginScreenState extends State<LoginScreen> {
                           decoration: InputDecoration(labelText: 'Password', prefixIcon: const Icon(Icons.lock_rounded), suffixIcon: IconButton(onPressed: () => setState(() => _obscure = !_obscure), icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off))),
                         ),
                         const SizedBox(height: 18),
-                        AsyncButton(label: 'Sign in', icon: Icons.login_rounded, onPressed: () {
-                          if (_form.currentState!.validate()) context.read<AppProvider>().login(_identifier.text, _password.text);
-                        }),
+                        SizedBox(
+                          width: double.infinity,
+                          child: AsyncButton(label: 'Sign in', icon: Icons.login_rounded, onPressed: () {
+                            if (_form.currentState!.validate()) context.read<AppProvider>().login(_identifier.text, _password.text);
+                          }),
+                        ),
                         TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RegisterScreen())), child: const Text('New here? Create Account')),
                       ]),
                     ),
