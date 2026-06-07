@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:lottie/lottie.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/app_models.dart';
@@ -68,15 +67,21 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final app = context.watch<AppProvider>();
     final activeCategories = app.activeCategories;
-    categoryId ??= activeCategories.isEmpty ? null : activeCategories.first.id;
+    if (categoryId != 'deals' && !activeCategories.any((item) => item.id == categoryId)) {
+      categoryId = activeCategories.isEmpty ? null : activeCategories.first.id;
+    }
     final selected = activeCategories.where((item) => item.id == categoryId).firstOrNull;
-    final showingDeals = categoryId == 'deals';
-    final filtered = app.products
-        .where((product) => product.available && (selected == null || product.categoryId == selected.id) && product.name.toLowerCase().contains(query.toLowerCase()))
-        .toList();
+    final isSearching = query.trim().isNotEmpty;
+    final showingDeals = !isSearching && categoryId == 'deals';
+    final filtered = isSearching
+        ? <Product>[
+            ...app.products.where((product) => product.customerVisible && productMatchesQuery(product, query)),
+            ...app.deals.where((deal) => deal.customerVisible && dealMatchesQuery(deal, query)).map((deal) => deal.asProduct()),
+          ]
+        : app.products.where((product) => product.customerVisible && (selected == null || product.categoryId == selected.id)).toList();
     return Scaffold(
       appBar: AppBar(
-        title: const MashLogo(compact: true),
+        title: const MashLogo(compact: true, onDark: true),
         actions: [
           Badge(
             isLabelVisible: app.cartCount > 0,
@@ -120,19 +125,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              SectionHeading(showingDeals ? 'Mashbash Deals' : (selected?.name ?? 'Menu')),
+              SectionHeading(isSearching ? 'Search results' : (showingDeals ? 'Mashbash Deals' : (selected?.name ?? 'Menu'))),
             ]),
           ),
         ),
         if (showingDeals)
-          _DealGrid(deals: app.deals.where((deal) => deal.active).toList())
+          _DealGrid(deals: app.deals.where((deal) => deal.customerVisible).toList())
         else if (filtered.isEmpty)
-          const SliverFillRemaining(child: EmptyState(icon: Icons.search_off_rounded, title: 'Nothing found', message: 'Try another category or search phrase.'))
+          const SliverToBoxAdapter(child: SizedBox(height: 260, child: EmptyState(icon: Icons.search_off_rounded, title: 'Nothing found', message: 'Try another search phrase.')))
         else
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(14, 4, 14, 24),
             sliver: SliverGrid(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisExtent: 294, crossAxisSpacing: 10, mainAxisSpacing: 10),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisExtent: 330, crossAxisSpacing: 10, mainAxisSpacing: 10),
               delegate: SliverChildBuilderDelegate((context, index) => ProductCard(product: filtered[index]), childCount: filtered.length),
             ),
           ),
@@ -181,7 +186,7 @@ class _SlideCarousel extends StatelessWidget {
                 clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(borderRadius: BorderRadius.circular(24), color: MashColors.primary),
                 child: Stack(fit: StackFit.expand, children: [
-                  CachedNetworkImage(imageUrl: slide.imageUrl, fit: BoxFit.cover, errorWidget: (_, __, ___) => const ColoredBox(color: MashColors.primary)),
+                  CachedNetworkImage(imageUrl: slide.imageUrl, fit: BoxFit.cover, maxWidthDiskCache: 1280, maxHeightDiskCache: 720, errorWidget: (_, __, ___) => const ColoredBox(color: MashColors.primary)),
                   const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Color(0xE68B0000)]))),
                   Padding(
                     padding: const EdgeInsets.all(18),
@@ -220,7 +225,7 @@ class _CategoryTile extends StatelessWidget {
               height: 62,
               padding: const EdgeInsets.all(3),
               decoration: BoxDecoration(shape: BoxShape.circle, color: selected ? MashColors.secondary : Colors.white, border: Border.all(color: selected ? MashColors.primary : const Color(0xFFE8DED1), width: selected ? 2 : 1)),
-              child: ClipOval(child: CachedNetworkImage(imageUrl: category.imageUrl, fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.lunch_dining_rounded, color: MashColors.primary))),
+              child: ClipOval(child: CachedNetworkImage(imageUrl: category.imageUrl, fit: BoxFit.cover, maxWidthDiskCache: 240, maxHeightDiskCache: 240, errorWidget: (_, __, ___) => const Icon(Icons.lunch_dining_rounded, color: MashColors.primary))),
             ),
             const SizedBox(height: 4),
             Text(category.name, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: selected ? MashColors.primary : MashColors.ink)),
@@ -241,7 +246,7 @@ class ProductCard extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(9),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              ProductImage(product: product, height: 130),
+              ProductImage(product: product, height: 118),
               const SizedBox(height: 8),
               Text(product.name.toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 17, color: MashColors.primary)),
               Text(product.description, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.black54)),
@@ -269,9 +274,9 @@ class _DealGrid extends StatelessWidget {
   Widget build(BuildContext context) => SliverPadding(
         padding: const EdgeInsets.fromLTRB(14, 4, 14, 24),
         sliver: deals.isEmpty
-            ? const SliverFillRemaining(child: EmptyState(icon: Icons.local_offer_outlined, title: 'No active deals', message: 'Fresh offers are coming soon.'))
+            ? const SliverToBoxAdapter(child: SizedBox(height: 260, child: EmptyState(icon: Icons.local_offer_outlined, title: 'No active deals', message: 'Fresh offers are coming soon.')))
             : SliverGrid(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisExtent: 285, crossAxisSpacing: 10, mainAxisSpacing: 10),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisExtent: 330, crossAxisSpacing: 10, mainAxisSpacing: 10),
                 delegate: SliverChildBuilderDelegate((context, index) => _DealCard(deal: deals[index]), childCount: deals.length),
               ),
       );
@@ -289,7 +294,7 @@ class _DealCard extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(9),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              ProductImage(product: deal.asProduct(), height: 125),
+              ProductImage(product: deal.asProduct(), height: 116),
               const SizedBox(height: 8),
               Text(deal.name.toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 17, color: MashColors.primary)),
               Text(deal.itemNames.join(' + '), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
@@ -311,13 +316,15 @@ class _DealDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) => AlertDialog(
         title: Text(deal.name.toUpperCase()),
-        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          ProductImage(product: deal.asProduct(), height: 180),
-          const SizedBox(height: 12),
-          Text(deal.itemNames.join(' + ')),
-          const SizedBox(height: 8),
-          Text(money(deal.dealPrice), style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: MashColors.primary)),
-        ]),
+        content: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            ProductImage(product: deal.asProduct(), height: 180),
+            const SizedBox(height: 12),
+            Text(deal.itemNames.join(' + ')),
+            const SizedBox(height: 8),
+            Text(money(deal.dealPrice), style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: MashColors.primary)),
+          ]),
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
           FilledButton(onPressed: () {
@@ -439,6 +446,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   @override
+  void dispose() {
+    _address.dispose();
+    _phone.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final app = context.watch<AppProvider>();
     return Scaffold(
@@ -483,7 +497,12 @@ class OrderConfirmationScreen extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.all(28),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                SizedBox(height: 180, child: Lottie.network('https://assets10.lottiefiles.com/packages/lf20_jbrw3hcz.json', errorBuilder: (_, __, ___) => const Icon(Icons.check_circle_rounded, size: 150, color: MashColors.success))),
+                Container(
+                  width: 150,
+                  height: 150,
+                  decoration: BoxDecoration(color: MashColors.secondary.withValues(alpha: .3), shape: BoxShape.circle),
+                  child: const Icon(Icons.check_circle_rounded, size: 112, color: MashColors.success),
+                ),
                 Text('ORDER PLACED!', style: Theme.of(context).textTheme.headlineMedium?.copyWith(color: MashColors.primary)),
                 const SizedBox(height: 8),
                 Text('Order #${orderId.substring(0, orderId.length > 8 ? 8 : orderId.length).toUpperCase()}'),
@@ -528,6 +547,22 @@ class OrderTrackingScreen extends StatelessWidget {
                 ]);
               }),
               if (order.status == OrderStatus.cancelled) const MashPanel(color: Color(0xFFFFE3E3), child: Text('This order was cancelled.', style: TextStyle(fontWeight: FontWeight.w900, color: MashColors.primary))),
+              const SizedBox(height: 16),
+              MashPanel(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text('Order items', style: TextStyle(fontWeight: FontWeight.w900)),
+                  ...order.items.map((item) {
+                    final quantity = (item['quantity'] as num? ?? 0).round();
+                    final lineTotal = (item['line_total'] as num?)?.round() ?? (item['price'] as num? ?? 0).round() * quantity;
+                    return ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('$quantity x ${item['name']}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                      trailing: Text(money(lineTotal), style: const TextStyle(fontWeight: FontWeight.w900)),
+                    );
+                  }),
+                ]),
+              ),
               const SizedBox(height: 16),
               MashPanel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('Delivering to', style: TextStyle(fontWeight: FontWeight.w900)), Text(order.address), const Divider(), _TotalRow(label: 'Total', value: order.total, strong: true)])),
             ]),
@@ -583,6 +618,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _name = TextEditingController(text: user.name);
     _phone = TextEditingController(text: user.phone);
     _address = TextEditingController(text: user.address);
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _phone.dispose();
+    _address.dispose();
+    super.dispose();
   }
 
   @override

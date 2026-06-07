@@ -1,10 +1,15 @@
+import 'dart:io';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/app_models.dart';
 import '../../providers/app_provider.dart';
+import '../../services/storage_service.dart';
 import '../../utils/app_theme.dart';
 import '../../utils/validators.dart';
 import '../../widgets/mash_widgets.dart';
@@ -31,24 +36,56 @@ class _StaffPanelState extends State<StaffPanel> {
       if (user.can('manageSlides')) const _Destination('Slides', Icons.view_carousel_rounded, SlidesManagementScreen()),
       if (widget.role == UserRole.owner) const _Destination('Team', Icons.groups_rounded, UserManagementScreen()),
       if (user.can('viewReports')) const _Destination('Reports', Icons.bar_chart_rounded, ReportsScreen()),
+      if (widget.role == UserRole.owner) const _Destination('Settings', Icons.settings_rounded, OwnerSettingsScreen()),
     ];
     if (index >= destinations.length) index = 0;
     return Scaffold(
       appBar: AppBar(
-        title: const MashLogo(compact: true),
-        actions: [
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Center(child: Text('${user.name} · ${user.role.name.toUpperCase()}', style: const TextStyle(fontWeight: FontWeight.w700)))),
-          IconButton(onPressed: context.read<AppProvider>().logout, icon: const Icon(Icons.logout_rounded), tooltip: 'Sign out'),
-        ],
+        title: const MashLogo(compact: true, onDark: true),
+        actions: [IconButton(onPressed: context.read<AppProvider>().logout, icon: const Icon(Icons.logout_rounded), tooltip: 'Sign out')],
       ),
       body: Column(children: [const ErrorBanner(), Expanded(child: destinations[index].screen)]),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: index,
-        onDestinationSelected: (value) => setState(() => index = value),
-        destinations: destinations.map((item) => NavigationDestination(icon: Icon(item.icon), label: item.label)).toList(),
-      ),
+      bottomNavigationBar: _StaffBottomNav(destinations: destinations, selected: index, onSelected: (value) => setState(() => index = value)),
     );
   }
+}
+
+class _StaffBottomNav extends StatelessWidget {
+  const _StaffBottomNav({required this.destinations, required this.selected, required this.onSelected});
+  final List<_Destination> destinations;
+  final int selected;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+        top: false,
+        child: Container(
+          height: 66,
+          color: Colors.white,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: destinations.length,
+            itemBuilder: (context, index) {
+              final item = destinations[index];
+              final active = index == selected;
+              return SizedBox(
+                width: 72,
+                child: InkWell(
+                  onTap: () => onSelected(index),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 3),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(item.icon, color: active ? MashColors.primary : Colors.black54),
+                      const SizedBox(height: 3),
+                      Text(item.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10, fontWeight: active ? FontWeight.w900 : FontWeight.w600, color: active ? MashColors.primary : Colors.black54)),
+                    ]),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
 }
 
 class _Destination {
@@ -133,7 +170,7 @@ class _MetricGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) => GridView.count(
         crossAxisCount: MediaQuery.sizeOf(context).width > 760 ? 4 : 2,
-        childAspectRatio: 1.35,
+        childAspectRatio: MediaQuery.textScalerOf(context).scale(1) > 1.1 ? 1.05 : 1.25,
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         crossAxisSpacing: 10,
@@ -144,8 +181,8 @@ class _MetricGrid extends StatelessWidget {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
                     Icon(metric.icon, color: MashColors.primary),
                     const SizedBox(height: 7),
-                    Text(metric.value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-                    Text(metric.label, style: const TextStyle(color: Colors.black54)),
+                    Text(metric.value, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900)),
+                    Text(metric.label, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.black54)),
                   ]),
                 ))
             .toList(),
@@ -275,23 +312,40 @@ class MenuManagementScreen extends StatefulWidget {
 
 class _MenuManagementScreenState extends State<MenuManagementScreen> {
   bool categories = false;
+  bool showArchived = false;
 
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppProvider>();
+    final categoryItems = app.categories.where((item) => item.archived == showArchived).toList();
+    final productItems = app.products.where((item) => item.archived == showArchived).toList();
+    final empty = categories ? categoryItems.isEmpty : productItems.isEmpty;
     return Scaffold(
       body: Column(children: [
         Padding(
           padding: const EdgeInsets.all(12),
           child: SegmentedButton<bool>(segments: const [ButtonSegment(value: false, label: Text('Products'), icon: Icon(Icons.lunch_dining_rounded)), ButtonSegment(value: true, label: Text('Categories'), icon: Icon(Icons.category_rounded))], selected: {categories}, onSelectionChanged: (value) => setState(() => categories = value.first)),
         ),
+        SwitchListTile(
+          dense: true,
+          value: showArchived,
+          onChanged: (value) => setState(() => showArchived = value),
+          title: const Text('Show archived items'),
+          secondary: const Icon(Icons.archive_outlined),
+        ),
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(12),
-            children: categories
-                ? app.categories.map((category) => _CategoryTile(category: category)).toList()
-                : app.products.map((product) => _ProductTile(product: product)).toList(),
-          ),
+          child: empty
+              ? EmptyState(
+                  icon: showArchived ? Icons.archive_outlined : Icons.restaurant_menu_rounded,
+                  title: showArchived ? 'No archived items' : (categories ? 'No categories yet' : 'No products yet'),
+                  message: showArchived ? 'Archived items will appear here.' : 'Use the add button to create the first item.',
+                )
+              : ListView(
+                  padding: const EdgeInsets.all(12),
+                  children: categories
+                      ? categoryItems.map((category) => _CategoryTile(category: category)).toList()
+                      : productItems.map((product) => _ProductTile(product: product)).toList(),
+                ),
         ),
       ]),
       floatingActionButton: FloatingActionButton.extended(
@@ -310,10 +364,16 @@ class _CategoryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Card(
         child: ListTile(
-          leading: CircleAvatar(backgroundImage: category.imageUrl.isEmpty ? null : NetworkImage(category.imageUrl), child: category.imageUrl.isEmpty ? const Icon(Icons.category_rounded) : null),
-          title: Text(category.name, style: const TextStyle(fontWeight: FontWeight.w900)),
+          leading: CircleAvatar(backgroundImage: category.imageUrl.isEmpty ? null : CachedNetworkImageProvider(category.imageUrl), child: category.imageUrl.isEmpty ? const Icon(Icons.category_rounded) : null),
+          title: Row(children: [Expanded(child: Text(category.name, style: const TextStyle(fontWeight: FontWeight.w900))), _StateBadge(label: category.archived ? 'Archived' : category.active ? 'Active' : 'Disabled')]),
           subtitle: Text('Sort ${category.sortOrder} · ${category.active ? 'Active' : 'Hidden'}'),
-          trailing: _Actions(onEdit: () => showDialog(context: context, builder: (_) => CategoryEditor(category: category)), onDelete: () => context.read<AppProvider>().run(() => context.read<AppProvider>().data.deleteCategory(category.id), success: 'Category deleted.')),
+          trailing: _MenuActions(
+            active: category.active,
+            archived: category.archived,
+            onEdit: () => showDialog(context: context, builder: (_) => CategoryEditor(category: category)),
+            onToggle: () => context.read<AppProvider>().run(() => context.read<AppProvider>().data.setCategoryActive(category.id, !category.active), success: category.active ? 'Category hidden from customers.' : 'Category visible to customers.'),
+            onArchive: () => context.read<AppProvider>().run(() => context.read<AppProvider>().data.archiveCategory(category.id, !category.archived), success: category.archived ? 'Category restored.' : 'Category archived without changing order history.'),
+          ),
         ),
       );
 }
@@ -325,10 +385,16 @@ class _ProductTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Card(
         child: ListTile(
-          leading: CircleAvatar(backgroundImage: product.imageUrl.isEmpty ? null : NetworkImage(product.imageUrl), child: product.imageUrl.isEmpty ? const Icon(Icons.lunch_dining_rounded) : null),
-          title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.w900)),
+          leading: CircleAvatar(backgroundImage: product.imageUrl.isEmpty ? null : CachedNetworkImageProvider(product.imageUrl), child: product.imageUrl.isEmpty ? const Icon(Icons.lunch_dining_rounded) : null),
+          title: Row(children: [Expanded(child: Text(product.name, style: const TextStyle(fontWeight: FontWeight.w900))), _StateBadge(label: product.archived ? 'Archived' : product.available ? 'Active' : 'Disabled')]),
           subtitle: Text('${product.category} · ${money(product.price)} · ${product.available ? 'Available' : 'Unavailable'}'),
-          trailing: _Actions(onEdit: () => showDialog(context: context, builder: (_) => ProductEditor(product: product)), onDelete: () => context.read<AppProvider>().run(() => context.read<AppProvider>().data.deleteProduct(product.id), success: 'Product deleted.')),
+          trailing: _MenuActions(
+            active: product.available,
+            archived: product.archived,
+            onEdit: () => showDialog(context: context, builder: (_) => ProductEditor(product: product)),
+            onToggle: () => context.read<AppProvider>().run(() => context.read<AppProvider>().data.setProductAvailable(product.id, !product.available), success: product.available ? 'Product hidden from customers.' : 'Product available to customers.'),
+            onArchive: () => context.read<AppProvider>().run(() => context.read<AppProvider>().data.archiveProduct(product.id, !product.archived), success: product.archived ? 'Product restored.' : 'Product archived without changing order history.'),
+          ),
         ),
       );
 }
@@ -342,6 +408,41 @@ class _Actions extends StatelessWidget {
   Widget build(BuildContext context) => PopupMenuButton<String>(
         onSelected: (action) => action == 'edit' ? onEdit() : onDelete(),
         itemBuilder: (_) => const [PopupMenuItem(value: 'edit', child: Text('Edit')), PopupMenuItem(value: 'delete', child: Text('Delete'))],
+      );
+}
+
+class _MenuActions extends StatelessWidget {
+  const _MenuActions({required this.active, required this.archived, required this.onEdit, required this.onToggle, required this.onArchive});
+  final bool active;
+  final bool archived;
+  final VoidCallback onEdit;
+  final VoidCallback onToggle;
+  final VoidCallback onArchive;
+
+  @override
+  Widget build(BuildContext context) => PopupMenuButton<String>(
+        onSelected: (action) {
+          if (action == 'edit') onEdit();
+          if (action == 'toggle') onToggle();
+          if (action == 'archive') onArchive();
+        },
+        itemBuilder: (_) => [
+          const PopupMenuItem(value: 'edit', child: Text('Edit')),
+          if (!archived) PopupMenuItem(value: 'toggle', child: Text(active ? 'Disable / Hide from customer' : 'Enable / Show to customer')),
+          PopupMenuItem(value: 'archive', child: Text(archived ? 'Restore' : 'Archive / Delete')),
+        ],
+      );
+}
+
+class _StateBadge extends StatelessWidget {
+  const _StateBadge({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        decoration: BoxDecoration(color: label == 'Active' ? const Color(0xFFE2F5E9) : const Color(0xFFFFE3E3), borderRadius: BorderRadius.circular(20)),
+        child: Text(label, style: const TextStyle(fontSize: 10, color: MashColors.primary, fontWeight: FontWeight.w900)),
       );
 }
 
@@ -359,6 +460,15 @@ class _CategoryEditorState extends State<CategoryEditor> {
   late final image = TextEditingController(text: widget.category?.imageUrl ?? '');
   late final sort = TextEditingController(text: '${widget.category?.sortOrder ?? 0}');
   late bool active = widget.category?.active ?? true;
+  File? pickedImage;
+
+  @override
+  void dispose() {
+    name.dispose();
+    image.dispose();
+    sort.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => _EditorDialog(
@@ -366,14 +476,19 @@ class _CategoryEditorState extends State<CategoryEditor> {
         form: form,
         fields: [
           TextFormField(controller: name, validator: (value) => Validators.requiredText(value, 'Category name'), decoration: const InputDecoration(labelText: 'Category name')),
-          TextFormField(controller: image, decoration: const InputDecoration(labelText: 'Image URL')),
-          TextFormField(controller: sort, keyboardType: TextInputType.number, validator: _number, decoration: const InputDecoration(labelText: 'Sort order')),
+          _ImageUploadField(controller: image, pickedImage: pickedImage, onPick: (file) => setState(() => pickedImage = file)),
+          TextFormField(controller: sort, keyboardType: TextInputType.number, validator: _number, decoration: const InputDecoration(labelText: 'Sort order', helperText: 'Lower numbers appear first on customer home.')),
           SwitchListTile(value: active, onChanged: (value) => setState(() => active = value), title: const Text('Visible to customers')),
         ],
         onSave: () async {
           if (!form.currentState!.validate()) return;
           final id = widget.category?.id ?? '';
-          final saved = await context.read<AppProvider>().run(() => context.read<AppProvider>().data.saveCategory(MenuCategory(id: id, name: name.text.trim(), imageUrl: image.text.trim(), sortOrder: int.parse(sort.text), active: active)), success: 'Category saved.');
+          var imageUrl = image.text.trim();
+          final app = context.read<AppProvider>();
+          final saved = await app.run(() async {
+            if (pickedImage != null) imageUrl = await StorageService().uploadImage('categories', id.isEmpty ? _id(name.text) : id, pickedImage!);
+            await app.data.saveCategory(MenuCategory(id: id, name: name.text.trim(), imageUrl: imageUrl, sortOrder: int.parse(sort.text), active: active, archivedAt: widget.category?.archivedAt));
+          }, success: 'Category saved.');
           if (saved && context.mounted) Navigator.pop(context);
         },
       );
@@ -396,6 +511,17 @@ class _ProductEditorState extends State<ProductEditor> {
   late final sort = TextEditingController(text: '${widget.product?.sortOrder ?? 0}');
   String? categoryId;
   late bool available = widget.product?.available ?? true;
+  File? pickedImage;
+
+  @override
+  void dispose() {
+    name.dispose();
+    description.dispose();
+    price.dispose();
+    image.dispose();
+    sort.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -409,15 +535,21 @@ class _ProductEditorState extends State<ProductEditor> {
         DropdownButtonFormField<String>(value: categoryId, items: categories.map((category) => DropdownMenuItem(value: category.id, child: Text(category.name))).toList(), onChanged: (value) => setState(() => categoryId = value), decoration: const InputDecoration(labelText: 'Category')),
         TextFormField(controller: description, maxLines: 3, validator: (value) => Validators.requiredText(value, 'Description'), decoration: const InputDecoration(labelText: 'Description')),
         TextFormField(controller: price, keyboardType: TextInputType.number, validator: _number, decoration: const InputDecoration(labelText: 'Price')),
-        TextFormField(controller: image, decoration: const InputDecoration(labelText: 'Image URL')),
+        _ImageUploadField(controller: image, pickedImage: pickedImage, onPick: (file) => setState(() => pickedImage = file)),
         TextFormField(controller: sort, keyboardType: TextInputType.number, validator: _number, decoration: const InputDecoration(labelText: 'Sort order')),
         SwitchListTile(value: available, onChanged: (value) => setState(() => available = value), title: const Text('Available')),
       ],
       onSave: () async {
         if (!form.currentState!.validate() || categoryId == null) return;
         final category = categories.firstWhere((item) => item.id == categoryId);
-        final saved = await context.read<AppProvider>().run(
-              () => context.read<AppProvider>().data.saveProduct(Product(id: widget.product?.id ?? _id(name.text), categoryId: category.id, name: name.text.trim(), category: category.name, description: description.text.trim(), price: int.parse(price.text), imageUrl: image.text.trim(), available: available, sortOrder: int.parse(sort.text))),
+        final id = widget.product?.id ?? _id(name.text);
+        var imageUrl = image.text.trim();
+        final app = context.read<AppProvider>();
+        final saved = await app.run(
+              () async {
+                if (pickedImage != null) imageUrl = await StorageService().uploadImage('products', id, pickedImage!);
+                await app.data.saveProduct(Product(id: id, categoryId: category.id, name: name.text.trim(), category: category.name, description: description.text.trim(), price: int.parse(price.text), imageUrl: imageUrl, available: available, sortOrder: int.parse(sort.text), archivedAt: widget.product?.archivedAt));
+              },
               success: 'Product saved.',
             );
         if (saved && context.mounted) Navigator.pop(context);
@@ -426,25 +558,40 @@ class _ProductEditorState extends State<ProductEditor> {
   }
 }
 
-class DealsManagementScreen extends StatelessWidget {
+class DealsManagementScreen extends StatefulWidget {
   const DealsManagementScreen({super.key});
 
   @override
+  State<DealsManagementScreen> createState() => _DealsManagementScreenState();
+}
+
+class _DealsManagementScreenState extends State<DealsManagementScreen> {
+  bool showArchived = false;
+
+  @override
   Widget build(BuildContext context) {
-    final deals = context.watch<AppProvider>().deals;
+    final deals = context.watch<AppProvider>().deals.where((deal) => deal.archived == showArchived).toList();
     return _CrudScaffold(
       empty: deals.isEmpty,
       emptyState: const EmptyState(icon: Icons.local_offer_outlined, title: 'No deals active', message: 'Create a value-packed Mashbash deal.'),
-      children: deals
+      children: [
+        SwitchListTile(value: showArchived, onChanged: (value) => setState(() => showArchived = value), title: const Text('Show archived deals'), secondary: const Icon(Icons.archive_outlined)),
+        ...deals
           .map((deal) => Card(
                 child: ListTile(
-                  title: Text(deal.name, style: const TextStyle(fontWeight: FontWeight.w900)),
+                  title: Row(children: [Expanded(child: Text(deal.name, style: const TextStyle(fontWeight: FontWeight.w900))), _StateBadge(label: deal.archived ? 'Archived' : deal.active ? 'Active' : 'Disabled')]),
                   subtitle: Text('${deal.itemNames.join(' + ')}\n${money(deal.dealPrice)} · ${deal.active ? 'Active' : 'Inactive'}'),
                   isThreeLine: true,
-                  trailing: _Actions(onEdit: () => showDialog(context: context, builder: (_) => DealEditor(deal: deal)), onDelete: () => context.read<AppProvider>().run(() => context.read<AppProvider>().data.deleteDeal(deal.id), success: 'Deal deleted.')),
+                  trailing: _MenuActions(
+                    active: deal.active,
+                    archived: deal.archived,
+                    onEdit: () => showDialog(context: context, builder: (_) => DealEditor(deal: deal)),
+                    onToggle: () => context.read<AppProvider>().run(() => context.read<AppProvider>().data.setDealActive(deal.id, !deal.active), success: deal.active ? 'Deal hidden from customers.' : 'Deal visible to customers.'),
+                    onArchive: () => context.read<AppProvider>().run(() => context.read<AppProvider>().data.archiveDeal(deal.id, !deal.archived), success: deal.archived ? 'Deal restored.' : 'Deal archived without changing order history.'),
+                  ),
                 ),
               ))
-          .toList(),
+      ],
       buttonLabel: 'Create deal',
       onAdd: () => showDialog(context: context, builder: (_) => const DealEditor()),
     );
@@ -467,6 +614,17 @@ class _DealEditorState extends State<DealEditor> {
   late final price = TextEditingController(text: '${widget.deal?.dealPrice ?? ''}');
   late final image = TextEditingController(text: widget.deal?.imageUrl ?? '');
   late bool active = widget.deal?.active ?? true;
+  File? pickedImage;
+
+  @override
+  void dispose() {
+    name.dispose();
+    items.dispose();
+    original.dispose();
+    price.dispose();
+    image.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => _EditorDialog(
@@ -477,13 +635,19 @@ class _DealEditorState extends State<DealEditor> {
           TextFormField(controller: items, validator: (value) => Validators.requiredText(value, 'Included items'), decoration: const InputDecoration(labelText: 'Items, separated by commas')),
           TextFormField(controller: original, keyboardType: TextInputType.number, validator: _number, decoration: const InputDecoration(labelText: 'Original price')),
           TextFormField(controller: price, keyboardType: TextInputType.number, validator: _number, decoration: const InputDecoration(labelText: 'Deal price')),
-          TextFormField(controller: image, decoration: const InputDecoration(labelText: 'Image URL')),
+          _ImageUploadField(controller: image, pickedImage: pickedImage, onPick: (file) => setState(() => pickedImage = file)),
           SwitchListTile(value: active, onChanged: (value) => setState(() => active = value), title: const Text('Active')),
         ],
         onSave: () async {
           if (!form.currentState!.validate()) return;
-          final saved = await context.read<AppProvider>().run(
-                () => context.read<AppProvider>().data.saveDeal(Deal(id: widget.deal?.id ?? _id(name.text), name: name.text.trim(), itemNames: items.text.split(',').map((item) => item.trim()).where((item) => item.isNotEmpty).toList(), originalPrice: int.parse(original.text), dealPrice: int.parse(price.text), imageUrl: image.text.trim(), active: active)),
+          final id = widget.deal?.id ?? _id(name.text);
+          var imageUrl = image.text.trim();
+          final app = context.read<AppProvider>();
+          final saved = await app.run(
+                () async {
+                  if (pickedImage != null) imageUrl = await StorageService().uploadImage('deals', id, pickedImage!);
+                  await app.data.saveDeal(Deal(id: id, name: name.text.trim(), itemNames: items.text.split(',').map((item) => item.trim()).where((item) => item.isNotEmpty).toList(), originalPrice: int.parse(original.text), dealPrice: int.parse(price.text), imageUrl: imageUrl, active: active, archivedAt: widget.deal?.archivedAt));
+                },
                 success: 'Deal saved.',
               );
           if (saved && context.mounted) Navigator.pop(context);
@@ -533,6 +697,17 @@ class _SlideEditorState extends State<SlideEditor> {
   late final sort = TextEditingController(text: '${widget.slide?.sortOrder ?? 0}');
   late String linkType = widget.slide?.linkType ?? 'none';
   late bool active = widget.slide?.active ?? true;
+  File? pickedImage;
+
+  @override
+  void dispose() {
+    title.dispose();
+    subtitle.dispose();
+    image.dispose();
+    linkId.dispose();
+    sort.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => _EditorDialog(
@@ -541,7 +716,7 @@ class _SlideEditorState extends State<SlideEditor> {
         fields: [
           TextFormField(controller: title, validator: (value) => Validators.requiredText(value, 'Title'), decoration: const InputDecoration(labelText: 'Title')),
           TextFormField(controller: subtitle, decoration: const InputDecoration(labelText: 'Subtitle')),
-          TextFormField(controller: image, validator: (value) => Validators.requiredText(value, 'Image URL'), decoration: const InputDecoration(labelText: 'Image URL')),
+          _ImageUploadField(controller: image, pickedImage: pickedImage, onPick: (file) => setState(() => pickedImage = file), imageRequired: true),
           DropdownButtonFormField<String>(value: linkType, items: const ['none', 'deal', 'product', 'category'].map((item) => DropdownMenuItem(value: item, child: Text(item))).toList(), onChanged: (value) => setState(() => linkType = value!), decoration: const InputDecoration(labelText: 'Link type')),
           TextFormField(controller: linkId, decoration: const InputDecoration(labelText: 'Link ID')),
           TextFormField(controller: sort, keyboardType: TextInputType.number, validator: _number, decoration: const InputDecoration(labelText: 'Sort order')),
@@ -549,8 +724,14 @@ class _SlideEditorState extends State<SlideEditor> {
         ],
         onSave: () async {
           if (!form.currentState!.validate()) return;
-          final saved = await context.read<AppProvider>().run(
-                () => context.read<AppProvider>().data.saveSlide(HomeSlide(id: widget.slide?.id ?? _id(title.text), title: title.text.trim(), subtitle: subtitle.text.trim(), imageUrl: image.text.trim(), linkType: linkType, linkId: linkId.text.trim(), sortOrder: int.parse(sort.text), active: active)),
+          final id = widget.slide?.id ?? _id(title.text);
+          var imageUrl = image.text.trim();
+          final app = context.read<AppProvider>();
+          final saved = await app.run(
+                () async {
+                  if (pickedImage != null) imageUrl = await StorageService().uploadImage('slides', id, pickedImage!);
+                  await app.data.saveSlide(HomeSlide(id: id, title: title.text.trim(), subtitle: subtitle.text.trim(), imageUrl: imageUrl, linkType: linkType, linkId: linkId.text.trim(), sortOrder: int.parse(sort.text), active: active));
+                },
                 success: 'Home slide saved.',
               );
           if (saved && context.mounted) Navigator.pop(context);
@@ -593,6 +774,192 @@ class _EditorDialog extends StatelessWidget {
           ),
         ),
         actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')), FilledButton(onPressed: onSave, child: const Text('Save'))],
+      );
+}
+
+class _ImageUploadField extends StatelessWidget {
+  const _ImageUploadField({required this.controller, required this.pickedImage, required this.onPick, this.imageRequired = false});
+  final TextEditingController controller;
+  final File? pickedImage;
+  final ValueChanged<File> onPick;
+  final bool imageRequired;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      ValueListenableBuilder<TextEditingValue>(
+        valueListenable: controller,
+        builder: (context, value, child) => Container(
+          height: 130,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(color: const Color(0xFFFFE0B2), borderRadius: BorderRadius.circular(16)),
+          child: pickedImage != null
+              ? Image.file(pickedImage!, fit: BoxFit.cover)
+              : value.text.trim().isNotEmpty
+                  ? CachedNetworkImage(imageUrl: value.text.trim(), fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.broken_image_outlined, color: MashColors.primary))
+                  : const Center(child: Icon(Icons.image_outlined, size: 44, color: MashColors.primary)),
+        ),
+      ),
+      const SizedBox(height: 8),
+      OutlinedButton.icon(
+        onPressed: () async {
+          final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 88, maxWidth: 1600);
+          if (image != null) onPick(File(image.path));
+        },
+        icon: const Icon(Icons.upload_rounded),
+        label: Text(pickedImage == null ? 'Upload image' : 'Choose another image'),
+      ),
+      const SizedBox(height: 8),
+      TextFormField(
+        controller: controller,
+        validator: imageRequired ? (value) => (value ?? '').trim().isEmpty && pickedImage == null ? 'Upload an image or enter an image URL' : null : null,
+        decoration: const InputDecoration(labelText: 'Image URL (optional fallback)', prefixIcon: Icon(Icons.link_rounded)),
+      ),
+    ]);
+  }
+}
+
+class OwnerSettingsScreen extends StatefulWidget {
+  const OwnerSettingsScreen({super.key});
+
+  @override
+  State<OwnerSettingsScreen> createState() => _OwnerSettingsScreenState();
+}
+
+class _OwnerSettingsScreenState extends State<OwnerSettingsScreen> {
+  final form = GlobalKey<FormState>();
+  late final TextEditingController deliveryFee;
+  late final TextEditingController pendingMinutes;
+  final notificationTitle = TextEditingController();
+  final notificationBody = TextEditingController();
+  late bool newOrderNotifications;
+  late bool orderStatusNotifications;
+  late bool dailySalesSummary;
+
+  @override
+  void initState() {
+    super.initState();
+    final settings = context.read<AppProvider>().settings;
+    deliveryFee = TextEditingController(text: '${settings.deliveryFee}');
+    pendingMinutes = TextEditingController(text: '${settings.pendingAlertMinutes}');
+    newOrderNotifications = settings.newOrderNotifications;
+    orderStatusNotifications = settings.orderStatusNotifications;
+    dailySalesSummary = settings.dailySalesSummary;
+  }
+
+  @override
+  void dispose() {
+    deliveryFee.dispose();
+    pendingMinutes.dispose();
+    notificationTitle.dispose();
+    notificationBody.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const SectionHeading('Restaurant settings'),
+          const SizedBox(height: 14),
+          MashPanel(
+            child: Form(
+              key: form,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Delivery charge', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+                const SizedBox(height: 5),
+                const Text('This amount is added to every non-empty customer order. The safe default is Rs. 120.'),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: deliveryFee,
+                  keyboardType: TextInputType.number,
+                  validator: (value) {
+                    final amount = int.tryParse(value ?? '');
+                    if (amount == null) return 'Enter a whole number';
+                    if (amount < 0 || amount > 10000) return 'Enter an amount from 0 to 10,000';
+                    return null;
+                  },
+                  decoration: const InputDecoration(labelText: 'Delivery charge', prefixText: 'Rs. '),
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: newOrderNotifications,
+                  onChanged: (value) => setState(() => newOrderNotifications = value),
+                  title: const Text('New order notifications'),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: orderStatusNotifications,
+                  onChanged: (value) => setState(() => orderStatusNotifications = value),
+                  title: const Text('Order status notifications'),
+                  subtitle: const Text('Notify customers when their order changes.'),
+                ),
+                TextFormField(
+                  controller: pendingMinutes,
+                  keyboardType: TextInputType.number,
+                  validator: (value) {
+                    final minutes = int.tryParse(value ?? '');
+                    if (minutes == null || minutes < 1 || minutes > 180) return 'Enter minutes from 1 to 180';
+                    return null;
+                  },
+                  decoration: const InputDecoration(labelText: 'Pending order alert minutes'),
+                ),
+                const SizedBox(height: 14),
+                AsyncButton(
+                  label: 'Save restaurant settings',
+                  icon: Icons.save_rounded,
+                  onPressed: () {
+                    if (!form.currentState!.validate()) return;
+                    context.read<AppProvider>().saveSettings(RestaurantSettings(
+                          deliveryFee: int.parse(deliveryFee.text),
+                          newOrderNotifications: newOrderNotifications,
+                          orderStatusNotifications: orderStatusNotifications,
+                          pendingAlertMinutes: int.parse(pendingMinutes.text),
+                          dailySalesSummary: dailySalesSummary,
+                        ));
+                  },
+                ),
+              ]),
+            ),
+          ),
+          const SizedBox(height: 18),
+          MashPanel(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Test this device', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+              const SizedBox(height: 5),
+              const Text('Checks this signed-in device token, the Supabase Edge Function, and FCM delivery.'),
+              const SizedBox(height: 12),
+              AsyncButton(
+                label: 'Send test notification to me',
+                icon: Icons.notifications_active_rounded,
+                onPressed: context.read<AppProvider>().sendTestNotification,
+              ),
+            ]),
+          ),
+          const SizedBox(height: 18),
+          MashPanel(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Notify all customers', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+              const SizedBox(height: 10),
+              TextField(controller: notificationTitle, decoration: const InputDecoration(labelText: 'Notification title')),
+              const SizedBox(height: 10),
+              TextField(controller: notificationBody, maxLines: 3, decoration: const InputDecoration(labelText: 'Notification message')),
+              const SizedBox(height: 12),
+              AsyncButton(
+                label: 'Send notification',
+                icon: Icons.campaign_rounded,
+                onPressed: () {
+                  if (notificationTitle.text.trim().isEmpty || notificationBody.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter a title and message.')));
+                    return;
+                  }
+                  context.read<AppProvider>().sendCustomNotification(title: notificationTitle.text.trim(), body: notificationBody.text.trim());
+                },
+              ),
+            ]),
+          ),
+        ],
       );
 }
 
@@ -663,6 +1030,14 @@ class _StaffEditorState extends State<StaffEditor> {
     phone = TextEditingController(text: widget.user?.phone ?? '');
     role = widget.user?.role ?? UserRole.manager;
     if (widget.user != null) rights.addAll(widget.user!.rights);
+  }
+
+  @override
+  void dispose() {
+    name.dispose();
+    phone.dispose();
+    password.dispose();
+    super.dispose();
   }
 
   @override
@@ -745,10 +1120,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
       for (final item in order.items) {
         final name = item['name'] as String? ?? 'Item';
         final quantity = (item['quantity'] as num? ?? 0).round();
-        final lineTotal = (item['price'] as num? ?? 0).round() * quantity;
+        final lineTotal = (item['line_total'] as num?)?.round() ?? (item['price'] as num? ?? 0).round() * quantity;
         counts[name] = (counts[name] ?? 0) + quantity;
-        final matches = app.products.where((product) => product.name == name);
-        final category = matches.isEmpty ? 'Deals / Other' : matches.first.category;
+        final category = item['category_name'] as String? ?? 'Deals / Other';
         categorySales[category] = (categorySales[category] ?? 0) + lineTotal;
       }
     }
