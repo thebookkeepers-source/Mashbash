@@ -70,7 +70,7 @@ class NotificationService {
       final initial = await messaging.getInitialMessage();
       if (initial != null) _handleMessage(initial);
     } catch (exception) {
-      debugPrint('Notification initialization unavailable: ${exception.runtimeType}');
+      if (kDebugMode) debugPrint('Notification initialization unavailable: ${exception.runtimeType}');
     }
   }
 
@@ -91,7 +91,7 @@ class NotificationService {
       await _saveToken(token, user);
       return NotificationActivationStatus.active;
     } catch (exception) {
-      debugPrint('Notification activation failed for ${user.role.name}: ${exception.runtimeType}');
+      if (kDebugMode) debugPrint('Notification activation failed for ${user.role.name}: ${exception.runtimeType}');
       return NotificationActivationStatus.failed;
     }
   }
@@ -99,9 +99,9 @@ class NotificationService {
   Future<void> _saveToken(String token, AppUser user) async {
     try {
       await _data.saveDeviceToken(token, Platform.isAndroid ? 'android' : Platform.operatingSystem);
-      debugPrint('FCM token registered for ${user.role.name}: ...${token.substring(token.length > 6 ? token.length - 6 : 0)}');
+      if (kDebugMode) debugPrint('FCM token registered for ${user.role.name}: ...${token.substring(token.length > 6 ? token.length - 6 : 0)}');
     } catch (exception) {
-      debugPrint('FCM token registration failed for ${user.role.name}: ${exception.runtimeType}');
+      if (kDebugMode) debugPrint('FCM token registration failed for ${user.role.name}: ${exception.runtimeType}');
     }
   }
 
@@ -112,9 +112,9 @@ class NotificationService {
     if (token == null) return;
     try {
       await _data.deactivateDeviceToken(token);
-      debugPrint('FCM token marked inactive.');
+      if (kDebugMode) debugPrint('FCM token marked inactive.');
     } catch (exception) {
-      debugPrint('FCM token deactivation failed: ${exception.runtimeType}');
+      if (kDebugMode) debugPrint('FCM token deactivation failed: ${exception.runtimeType}');
     }
   }
 

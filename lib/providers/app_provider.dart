@@ -77,22 +77,27 @@ class AppProvider extends ChangeNotifier {
     _authSubscription = auth.authChanges.listen((state) => unawaited(_loadSessionSafely(state.session?.user)));
     _dataSubscriptions.addAll([
       data.categories().listen((value) {
+        _dataSucceeded();
         categories = value;
         notifyListeners();
       }),
       data.products().listen((value) {
+        _dataSucceeded();
         products = value;
         notifyListeners();
       }),
       data.deals().listen((value) {
+        _dataSucceeded();
         deals = value;
         notifyListeners();
       }),
       data.slides().listen((value) {
+        _dataSucceeded();
         slides = value;
         notifyListeners();
       }),
       data.settings().listen((value) {
+        _dataSucceeded();
         settings = value;
         notifyListeners();
       }),
@@ -111,6 +116,7 @@ class AppProvider extends ChangeNotifier {
 
   Future<void> _loadSession(User? authUser) async {
     await _ordersSubscription?.cancel();
+    if (authUser == null) await notification.deactivate();
     user = authUser == null ? null : await data.getUser(authUser.id).timeout(SupabaseService.requestTimeout);
     if (user != null) {
       _ordersSubscription = data
@@ -119,6 +125,7 @@ class AppProvider extends ChangeNotifier {
             riderOnly: user!.role == UserRole.rider,
           )
           .listen((value) {
+        _dataSucceeded();
         orders = value;
         _checkPendingAlerts();
         notifyListeners();
@@ -260,7 +267,7 @@ class AppProvider extends ChangeNotifier {
     try {
       await data.notifyOrderEvent(event, orderId);
     } catch (exception) {
-      debugPrint('Notification event $event failed: ${exception.runtimeType}');
+      if (kDebugMode) debugPrint('Notification event $event failed: ${exception.runtimeType}');
     }
   }
 
@@ -325,6 +332,11 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _dataSucceeded() {
+    hasNetwork = true;
+    connectionError = false;
+  }
+
   @override
   void dispose() {
     _authSubscription?.cancel();
@@ -335,6 +347,7 @@ class AppProvider extends ChangeNotifier {
     }
     _ordersSubscription?.cancel();
     unawaited(notification.dispose());
+    data.dispose();
     super.dispose();
   }
 }

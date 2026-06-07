@@ -126,16 +126,16 @@ Release signing reads private values from ignored `android/key.properties`. Debu
 Generate a private keystore:
 
 ```bash
-keytool -genkeypair -v -keystore mashbash-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias mashbash
+keytool -genkey -v -keystore mashbash-release-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias mashbash
 ```
 
-Keep the `.jks` outside the repository or under an ignored local path. Create ignored `android/key.properties`:
+Keep the `.jks` outside the repository or place it at ignored path `android/mashbash-release-key.jks`. Create ignored `android/key.properties`:
 
 ```properties
 storePassword=YOUR_STORE_PASSWORD
 keyPassword=YOUR_KEY_PASSWORD
 keyAlias=mashbash
-storeFile=C:/secure/path/mashbash-release.jks
+storeFile=../mashbash-release-key.jks
 ```
 
 Build a signed release APK or Play Store AAB:
@@ -147,6 +147,17 @@ flutter build appbundle --release --dart-define=SUPABASE_URL=$SUPABASE_URL --dar
 
 A signed release APK is optimized, installable as a stable application, and suitable for sharing. Debug APKs are larger, slower, and intended only for testing. Back up the release keystore securely; future updates must use the same key.
 
+The `Signed Android Release` GitHub Actions workflow runs manually or for `v*` tags. Add these repository Actions secrets before running it:
+
+- `SUPABASE_URL`
+- `SUPABASE_PUBLISHABLE_KEY`
+- `ANDROID_KEYSTORE_BASE64`
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+
+Create `ANDROID_KEYSTORE_BASE64` from the binary keystore without committing it. The workflow decodes the key only on the runner, builds signed `mashbash-release-apk` and `mashbash-release-aab` artifacts, then removes the temporary signing files.
+
 ## Quality checks
 
 ```bash
@@ -155,9 +166,13 @@ flutter test
 flutter build apk --debug
 ```
 
-GitHub Actions runs all three checks and uploads `mashbash-debug-apk` as a seven-day workflow artifact. The default placeholder Supabase URL/key allow CI to compile without repository secrets; use real `--dart-define` values for a working backend.
+GitHub Actions runs analyze, tests, debug APK build, and release APK/AAB compile checks. It uploads `mashbash-debug-apk` as a seven-day workflow artifact. The signed release workflow uploads release APK/AAB artifacts only when all signing and Supabase secrets are configured.
 
 Add repository Actions secrets named `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` so CI builds an APK connected to the test project.
+
+## Play Protect and distribution
+
+Mashbash uses the stable `com.mashbash.app` package name, disables Android backups and cleartext traffic, requests only internet and notification permissions, and contains no installer, SMS, contacts, location, overlay, or storage-management behavior. Distribute signed release builds instead of debug APKs. Android may still warn about any APK sideloaded outside Google Play; Google Play internal testing is the preferred client-testing route and removes most sideload trust friction.
 
 ## Security model
 
@@ -171,3 +186,4 @@ Add repository Actions secrets named `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KE
 - Active owner/manager/counter sessions detect orders that exceed the configured pending-alert time; the backend deduplicates each delayed-order notification.
 - Device tokens can be read only by their owning user; registration and deactivation use guarded database functions.
 - Role changes are protected in the database, and passwords are handled only by Supabase Auth.
+- Enable **Leaked Password Protection** under Supabase **Authentication > Attack Protection** before production launch.

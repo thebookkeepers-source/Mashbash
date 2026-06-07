@@ -16,6 +16,24 @@ void main() {
     expect(File('flutter_launcher_icons.yaml').existsSync(), isTrue);
   });
 
+  test('Android release configuration stays minimal and production-ready', () {
+    final manifest = File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+    final pubspec = File('pubspec.yaml').readAsStringSync();
+    final customerScreens = File('lib/screens/customer/customer_screens.dart').readAsStringSync();
+
+    expect(pubspec, contains('version: 1.0.0+1'));
+    expect(manifest, contains('android:label="Mashbash"'));
+    expect(manifest, contains('android:allowBackup="false"'));
+    expect(manifest, contains('android.permission.INTERNET'));
+    expect(manifest, contains('android.permission.POST_NOTIFICATIONS'));
+    for (final permission in ['REQUEST_INSTALL_PACKAGES', 'READ_SMS', 'SEND_SMS', 'READ_CONTACTS', 'ACCESS_FINE_LOCATION', 'ACCESS_BACKGROUND_LOCATION', 'MANAGE_EXTERNAL_STORAGE', 'SYSTEM_ALERT_WINDOW']) {
+      expect(manifest, isNot(contains(permission)));
+    }
+    expect(pubspec, isNot(contains('lottie:')));
+    expect(customerScreens, isNot(contains('Lottie.network')));
+    expect(File('.github/workflows/release.yml').existsSync(), isTrue);
+  });
+
   test('Google login remains hidden until OAuth setup is enabled', () {
     final authScreen = File('lib/screens/auth/auth_screens.dart').readAsStringSync();
     final authService = File('lib/services/auth_service.dart').readAsStringSync();

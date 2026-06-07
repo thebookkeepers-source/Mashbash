@@ -317,8 +317,9 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppProvider>();
-    final categoryItems = app.categories.where((item) => item.archived == showArchived);
-    final productItems = app.products.where((item) => item.archived == showArchived);
+    final categoryItems = app.categories.where((item) => item.archived == showArchived).toList();
+    final productItems = app.products.where((item) => item.archived == showArchived).toList();
+    final empty = categories ? categoryItems.isEmpty : productItems.isEmpty;
     return Scaffold(
       body: Column(children: [
         Padding(
@@ -333,12 +334,18 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
           secondary: const Icon(Icons.archive_outlined),
         ),
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(12),
-            children: categories
-                ? categoryItems.map((category) => _CategoryTile(category: category)).toList()
-                : productItems.map((product) => _ProductTile(product: product)).toList(),
-          ),
+          child: empty
+              ? EmptyState(
+                  icon: showArchived ? Icons.archive_outlined : Icons.restaurant_menu_rounded,
+                  title: showArchived ? 'No archived items' : (categories ? 'No categories yet' : 'No products yet'),
+                  message: showArchived ? 'Archived items will appear here.' : 'Use the add button to create the first item.',
+                )
+              : ListView(
+                  padding: const EdgeInsets.all(12),
+                  children: categories
+                      ? categoryItems.map((category) => _CategoryTile(category: category)).toList()
+                      : productItems.map((product) => _ProductTile(product: product)).toList(),
+                ),
         ),
       ]),
       floatingActionButton: FloatingActionButton.extended(
@@ -357,7 +364,7 @@ class _CategoryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Card(
         child: ListTile(
-          leading: CircleAvatar(backgroundImage: category.imageUrl.isEmpty ? null : NetworkImage(category.imageUrl), child: category.imageUrl.isEmpty ? const Icon(Icons.category_rounded) : null),
+          leading: CircleAvatar(backgroundImage: category.imageUrl.isEmpty ? null : CachedNetworkImageProvider(category.imageUrl), child: category.imageUrl.isEmpty ? const Icon(Icons.category_rounded) : null),
           title: Row(children: [Expanded(child: Text(category.name, style: const TextStyle(fontWeight: FontWeight.w900))), _StateBadge(label: category.archived ? 'Archived' : category.active ? 'Active' : 'Disabled')]),
           subtitle: Text('Sort ${category.sortOrder} · ${category.active ? 'Active' : 'Hidden'}'),
           trailing: _MenuActions(
@@ -378,7 +385,7 @@ class _ProductTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Card(
         child: ListTile(
-          leading: CircleAvatar(backgroundImage: product.imageUrl.isEmpty ? null : NetworkImage(product.imageUrl), child: product.imageUrl.isEmpty ? const Icon(Icons.lunch_dining_rounded) : null),
+          leading: CircleAvatar(backgroundImage: product.imageUrl.isEmpty ? null : CachedNetworkImageProvider(product.imageUrl), child: product.imageUrl.isEmpty ? const Icon(Icons.lunch_dining_rounded) : null),
           title: Row(children: [Expanded(child: Text(product.name, style: const TextStyle(fontWeight: FontWeight.w900))), _StateBadge(label: product.archived ? 'Archived' : product.available ? 'Active' : 'Disabled')]),
           subtitle: Text('${product.category} · ${money(product.price)} · ${product.available ? 'Available' : 'Unavailable'}'),
           trailing: _MenuActions(
@@ -456,6 +463,14 @@ class _CategoryEditorState extends State<CategoryEditor> {
   File? pickedImage;
 
   @override
+  void dispose() {
+    name.dispose();
+    image.dispose();
+    sort.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) => _EditorDialog(
         title: widget.category == null ? 'Add category' : 'Edit category',
         form: form,
@@ -497,6 +512,16 @@ class _ProductEditorState extends State<ProductEditor> {
   String? categoryId;
   late bool available = widget.product?.available ?? true;
   File? pickedImage;
+
+  @override
+  void dispose() {
+    name.dispose();
+    description.dispose();
+    price.dispose();
+    image.dispose();
+    sort.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -592,6 +617,16 @@ class _DealEditorState extends State<DealEditor> {
   File? pickedImage;
 
   @override
+  void dispose() {
+    name.dispose();
+    items.dispose();
+    original.dispose();
+    price.dispose();
+    image.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) => _EditorDialog(
         title: widget.deal == null ? 'Create deal' : 'Edit deal',
         form: form,
@@ -663,6 +698,16 @@ class _SlideEditorState extends State<SlideEditor> {
   late String linkType = widget.slide?.linkType ?? 'none';
   late bool active = widget.slide?.active ?? true;
   File? pickedImage;
+
+  @override
+  void dispose() {
+    title.dispose();
+    subtitle.dispose();
+    image.dispose();
+    linkId.dispose();
+    sort.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => _EditorDialog(
@@ -803,6 +848,15 @@ class _OwnerSettingsScreenState extends State<OwnerSettingsScreen> {
   }
 
   @override
+  void dispose() {
+    deliveryFee.dispose();
+    pendingMinutes.dispose();
+    notificationTitle.dispose();
+    notificationBody.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) => ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -850,13 +904,6 @@ class _OwnerSettingsScreenState extends State<OwnerSettingsScreen> {
                     return null;
                   },
                   decoration: const InputDecoration(labelText: 'Pending order alert minutes'),
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: dailySalesSummary,
-                  onChanged: (value) => setState(() => dailySalesSummary = value),
-                  title: const Text('Daily sales summary'),
-                  subtitle: const Text('Ready for a scheduled Edge Function or Supabase Cron job.'),
                 ),
                 const SizedBox(height: 14),
                 AsyncButton(
@@ -983,6 +1030,14 @@ class _StaffEditorState extends State<StaffEditor> {
     phone = TextEditingController(text: widget.user?.phone ?? '');
     role = widget.user?.role ?? UserRole.manager;
     if (widget.user != null) rights.addAll(widget.user!.rights);
+  }
+
+  @override
+  void dispose() {
+    name.dispose();
+    phone.dispose();
+    password.dispose();
+    super.dispose();
   }
 
   @override

@@ -18,53 +18,68 @@ class SupabaseService {
   Stream<Object> get connectionFailures => _connectionFailures.stream;
 
   Future<AppUser?> getUser(String uid) async {
-    final row = await _client.from('profiles').select('*, staff_permissions(*)').eq('id', uid).maybeSingle().timeout(requestTimeout);
+    final row = await _client
+        .from('profiles')
+        .select('id, name, phone, address, email, role, active, rider_available, staff_permissions(view_orders, update_order_status, assign_riders, manage_menu, manage_deals, manage_slides, view_reports)')
+        .eq('id', uid)
+        .maybeSingle()
+        .timeout(requestTimeout);
     return row == null ? null : AppUser.fromMap(row);
   }
 
   Future<void> saveUser(AppUser user) => _client.from('profiles').update(user.toMap()).eq('id', user.id);
 
   Stream<List<AppUser>> staff() => _poll(() async {
-        final rows = await _client.from('profiles').select('*, staff_permissions(*)').inFilter('role', ['manager', 'counter', 'rider']).order('name');
+        final rows = await _client
+            .from('profiles')
+            .select('id, name, phone, address, email, role, active, rider_available, staff_permissions(view_orders, update_order_status, assign_riders, manage_menu, manage_deals, manage_slides, view_reports)')
+            .inFilter('role', ['manager', 'counter', 'rider'])
+            .order('name');
         return rows.map(AppUser.fromMap).toList();
-      });
+      }, interval: const Duration(seconds: 10));
 
   Stream<List<AppUser>> availableRiders() => _poll(() async {
-        final rows = await _client.from('profiles').select().eq('role', 'rider').eq('active', true).eq('rider_available', true).order('name');
+        final rows = await _client.from('profiles').select('id, name, phone, address, email, role, active, rider_available').eq('role', 'rider').eq('active', true).eq('rider_available', true).order('name');
         return rows.map(AppUser.fromMap).toList();
-      }, interval: const Duration(seconds: 3));
+      }, interval: const Duration(seconds: 5));
 
   Stream<List<MenuCategory>> categories() => _poll(() async {
-        final rows = await _client.from('categories').select().order('sort_order').order('name');
+        final rows = await _client.from('categories').select('id, name, image_url, sort_order, active, archived_at').order('sort_order').order('name');
         return rows.map(MenuCategory.fromMap).toList();
-      });
+      }, interval: const Duration(seconds: 10));
 
   Stream<List<Product>> products() => _poll(() async {
-        final rows = await _client.from('products').select('*, categories(name, active, archived_at)').order('sort_order').order('name');
+        final rows = await _client
+            .from('products')
+            .select('id, category_id, name, description, price, image_url, available, sort_order, archived_at, categories(name, active, archived_at)')
+            .order('sort_order')
+            .order('name');
         return rows.map(Product.fromMap).toList();
-      });
+      }, interval: const Duration(seconds: 10));
 
   Stream<List<Deal>> deals() => _poll(() async {
-        final rows = await _client.from('deals').select().order('name');
+        final rows = await _client.from('deals').select('id, name, item_names, original_price, deal_price, image_url, active, archived_at').order('name');
         return rows.map(Deal.fromMap).toList();
-      });
+      }, interval: const Duration(seconds: 10));
 
   Stream<List<HomeSlide>> slides() => _poll(() async {
-        final rows = await _client.from('home_slides').select().order('sort_order').order('created_at');
+        final rows = await _client.from('home_slides').select('id, title, subtitle, image_url, link_type, link_id, sort_order, active').order('sort_order').order('created_at');
         return rows.map(HomeSlide.fromMap).toList();
-      });
+      }, interval: const Duration(seconds: 10));
 
   Stream<RestaurantSettings> settings() => _poll(() async {
-        final row = await _client.from('app_settings').select().eq('id', 'main').maybeSingle();
+        final row = await _client.from('app_settings').select('id, delivery_fee, new_order_notifications, order_status_notifications, pending_alert_minutes, daily_sales_summary').eq('id', 'main').maybeSingle();
         return [RestaurantSettings.fromMap(row)];
-      }).map((values) => values.first);
+      }, interval: const Duration(seconds: 15)).map((values) => values.first);
 
   Stream<List<MashOrder>> orders({String? customerId, bool riderOnly = false}) => _poll(() async {
-        var query = _client.from('orders').select('*, order_items(*), assigned_rider:profiles!orders_assigned_rider_id_fkey(name)');
+        var query = _client
+            .from('orders')
+            .select('id, customer_id, customer_name, phone, address, payment_method, subtotal, delivery_fee, status, assigned_rider_id, accepted_by, assigned_at, delivered_at, created_at, order_items(id, product_id, deal_id, item_type, name, price, quantity, image_url, category_name, line_total), assigned_rider:profiles!orders_assigned_rider_id_fkey(name)');
         if (customerId != null) query = query.eq(riderOnly ? 'assigned_rider_id' : 'customer_id', customerId);
         final rows = await query.order('created_at', ascending: false);
         return rows.map(MashOrder.fromMap).toList();
-      }, interval: const Duration(seconds: 2));
+      }, interval: const Duration(seconds: 4));
 
   Future<String> placeOrder({
     required List<CartLine> lines,
@@ -171,11 +186,13 @@ class SupabaseService {
       try {
         yield await fetch().timeout(requestTimeout);
       } catch (exception) {
-        _connectionFailures.add(exception);
+        if (!_connectionFailures.isClosed) _connectionFailures.add(exception);
       }
       await Future<void>.delayed(interval);
     }
   }
+
+  void dispose() => _connectionFailures.close();
 }
 
 String _functionMessage(dynamic data, String fallback) {

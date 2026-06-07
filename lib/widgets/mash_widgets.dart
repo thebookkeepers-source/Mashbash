@@ -69,7 +69,7 @@ class AsyncButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final busy = context.watch<AppProvider>().busy;
+    final busy = context.select<AppProvider, bool>((app) => app.busy);
     return ElevatedButton.icon(
       onPressed: busy ? null : onPressed,
       icon: busy
@@ -105,6 +105,8 @@ class ProductImage extends StatelessWidget {
                 height: height,
                 width: double.infinity,
                 fit: BoxFit.cover,
+                maxWidthDiskCache: 960,
+                maxHeightDiskCache: 960,
                 placeholder: (_, __) => Container(height: height, color: const Color(0xFFFFE0B2)),
                 errorWidget: (_, __, ___) => Container(height: height, color: const Color(0xFFFFE0B2), child: const Icon(Icons.lunch_dining_rounded)),
               ),
@@ -143,9 +145,9 @@ class ErrorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final app = context.watch<AppProvider>();
-    final error = app.error;
-    final message = app.message;
+    final notice = context.select<AppProvider, ({String? error, String? message})>((app) => (error: app.error, message: app.message));
+    final error = notice.error;
+    final message = notice.message;
     if (error == null && message == null) return const SizedBox.shrink();
     return Container(
       width: double.infinity,
@@ -156,7 +158,7 @@ class ErrorBanner extends StatelessWidget {
         Icon(error == null ? Icons.check_circle_outline : Icons.error_outline, color: error == null ? MashColors.success : MashColors.primary),
         const SizedBox(width: 8),
         Expanded(child: Text(error ?? message!)),
-        IconButton(onPressed: app.clearNotice, icon: const Icon(Icons.close, size: 18)),
+        IconButton(onPressed: context.read<AppProvider>().clearNotice, icon: const Icon(Icons.close, size: 18)),
       ]),
     );
   }
@@ -218,11 +220,11 @@ class ConnectionGuard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final app = context.watch<AppProvider>();
-    if (app.connectionError && !app.hasUsableData) return const ConnectionErrorScreen();
+    final status = context.select<AppProvider, ({bool error, bool usable})>((app) => (error: app.connectionError, usable: app.hasUsableData));
+    if (status.error && !status.usable) return const ConnectionErrorScreen();
     return Stack(children: [
       child,
-      if (app.connectionError)
+      if (status.error)
         Positioned(
           top: MediaQuery.paddingOf(context).top + 6,
           left: 12,
