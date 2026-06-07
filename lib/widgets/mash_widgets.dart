@@ -217,3 +217,82 @@ class MashPanel extends StatelessWidget {
         child: child,
       );
 }
+
+class ConnectionGuard extends StatelessWidget {
+  const ConnectionGuard({required this.child, super.key});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppProvider>();
+    if (app.connectionError && !app.hasUsableData) return const ConnectionErrorScreen();
+    return Stack(children: [
+      child,
+      if (app.connectionError)
+        Positioned(
+          top: MediaQuery.paddingOf(context).top + 6,
+          left: 12,
+          right: 12,
+          child: const Material(color: Colors.transparent, child: OfflineBanner()),
+        ),
+    ]);
+  }
+}
+
+class ConnectionErrorScreen extends StatelessWidget {
+  const ConnectionErrorScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppProvider>();
+    return Material(
+      color: MashColors.background,
+      child: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(28),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const MashLogo(),
+              const SizedBox(height: 28),
+              const Icon(Icons.cloud_off_rounded, size: 76, color: MashColors.primary),
+              const SizedBox(height: 14),
+              Text('Connection Error', style: Theme.of(context).textTheme.headlineMedium?.copyWith(color: MashColors.primary)),
+              const SizedBox(height: 8),
+              const Text(
+                'There is an error connecting to the server. Please check your internet connection and try again.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 22),
+              ElevatedButton.icon(
+                onPressed: app.retryingConnection ? null : app.retryConnection,
+                icon: app.retryingConnection
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.refresh_rounded),
+                label: Text(app.retryingConnection ? 'Checking connection' : 'Retry'),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class OfflineBanner extends StatelessWidget {
+  const OfflineBanner({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppProvider>();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(color: MashColors.secondary, borderRadius: BorderRadius.circular(16), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)]),
+      child: Row(children: [
+        const MashMark(size: 30),
+        const SizedBox(width: 9),
+        const Expanded(child: Text('Offline mode. Some information may be out of date.', style: TextStyle(color: MashColors.primary, fontWeight: FontWeight.w800))),
+        TextButton(onPressed: app.retryingConnection ? null : app.retryConnection, child: const Text('Retry')),
+      ]),
+    );
+  }
+}

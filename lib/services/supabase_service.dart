@@ -7,9 +7,13 @@ import '../models/app_models.dart';
 class SupabaseService {
   SupabaseService({SupabaseClient? client}) : _client = client ?? Supabase.instance.client;
   final SupabaseClient _client;
+  final StreamController<Object> _connectionFailures = StreamController<Object>.broadcast();
+  static const requestTimeout = Duration(seconds: 15);
+
+  Stream<Object> get connectionFailures => _connectionFailures.stream;
 
   Future<AppUser?> getUser(String uid) async {
-    final row = await _client.from('profiles').select('*, staff_permissions(*)').eq('id', uid).maybeSingle();
+    final row = await _client.from('profiles').select('*, staff_permissions(*)').eq('id', uid).maybeSingle().timeout(requestTimeout);
     return row == null ? null : AppUser.fromMap(row);
   }
 
@@ -31,7 +35,7 @@ class SupabaseService {
       });
 
   Stream<List<Product>> products() => _poll(() async {
-        final rows = await _client.from('products').select('*, categories(name)').order('sort_order').order('name');
+        final rows = await _client.from('products').select('*, categories(name, active, archived_at)').order('sort_order').order('name');
         return rows.map(Product.fromMap).toList();
       });
 
@@ -45,9 +49,9 @@ class SupabaseService {
         return rows.map(HomeSlide.fromMap).toList();
       });
 
-  Stream<int> deliveryFee() => _poll(() async {
-        final row = await _client.from('app_settings').select('delivery_fee').eq('id', 'main').maybeSingle();
-        return [((row?['delivery_fee'] as num?)?.round() ?? 120)];
+  Stream<RestaurantSettings> settings() => _poll(() async {
+        final row = await _client.from('app_settings').select().eq('id', 'main').maybeSingle();
+        return [RestaurantSettings.fromMap(row)];
       }).map((values) => values.first);
 
   Stream<List<MashOrder>> orders({String? customerId, bool riderOnly = false}) => _poll(() async {
@@ -87,7 +91,8 @@ class SupabaseService {
     if (category.id.isEmpty) values.remove('id');
     await _client.from('categories').upsert(values);
   }
-  Future<void> deleteCategory(String id) => _client.from('categories').delete().eq('id', id);
+  Future<void> setCategoryActive(String id, bool active) => _client.from('categories').update({'active': active}).eq('id', id);
+  Future<void> archiveCategory(String id, bool archived) => _client.from('categories').update({'active': false, 'archived_at': archived ? DateTime.now().toIso8601String() : null}).eq('id', id);
 
   Future<void> saveProduct(Product product) async {
     var categoryId = product.categoryId;
@@ -98,7 +103,8 @@ class SupabaseService {
     await _client.from('products').upsert({...product.toMap(), 'id': product.id, 'category_id': categoryId});
   }
 
-  Future<void> deleteProduct(String id) => _client.from('products').delete().eq('id', id);
+  Future<void> setProductAvailable(String id, bool available) => _client.from('products').update({'available': available}).eq('id', id);
+  Future<void> archiveProduct(String id, bool archived) => _client.from('products').update({'available': false, 'archived_at': archived ? DateTime.now().toIso8601String() : null}).eq('id', id);
 
   Future<void> saveDeal(Deal deal) => _client.from('deals').upsert({
         'id': deal.id,
@@ -108,12 +114,34 @@ class SupabaseService {
         'deal_price': deal.dealPrice,
         'image_url': deal.imageUrl,
         'active': deal.active,
+        'archived_at': deal.archivedAt?.toIso8601String(),
       });
 
-  Future<void> deleteDeal(String id) => _client.from('deals').delete().eq('id', id);
+  Future<void> setDealActive(String id, bool active) => _client.from('deals').update({'active': active}).eq('id', id);
+  Future<void> archiveDeal(String id, bool archived) => _client.from('deals').update({'active': false, 'archived_at': archived ? DateTime.now().toIso8601String() : null}).eq('id', id);
   Future<void> saveSlide(HomeSlide slide) => _client.from('home_slides').upsert(slide.toMap());
   Future<void> deleteSlide(String id) => _client.from('home_slides').delete().eq('id', id);
-  Future<void> saveDeliveryFee(int amount) => _client.from('app_settings').upsert({'id': 'main', 'delivery_fee': amount, 'updated_at': DateTime.now().toIso8601String()});
+  Future<void> saveSettings(RestaurantSettings settings) => _client.from('app_settings').upsert(settings.toMap());
+
+  Future<void> saveDeviceToken(String token, String platform) =>
+      _client.rpc('register_device_token', params: {'p_token': token, 'p_platform': platform});
+
+  Future<void> deactivateDeviceToken(String token) =>
+      _client.rpc('deactivate_device_token', params: {'p_token': token});
+
+  Future<void> notifyOrderEvent(String event, String orderId) async {
+    final response = await _client.functions.invoke('send-notification', body: {'event': event, 'order_id': orderId});
+    if (response.status >= 300) throw Exception(_functionMessage(response.data, 'Notification could not be sent.'));
+  }
+
+  Future<void> sendCustomNotification({required String title, required String body}) async {
+    final response = await _client.functions.invoke('send-notification', body: {'event': 'custom', 'title': title, 'body': body, 'all_customers': true});
+    if (response.status >= 300) throw Exception(_functionMessage(response.data, 'Notification could not be sent.'));
+  }
+
+  Future<void> healthCheck() async {
+    await _client.from('app_settings').select('id').eq('id', 'main').limit(1).timeout(requestTimeout);
+  }
 
   Future<void> manageStaff({required String action, required String userId}) async {
     final response = await _client.functions.invoke('create-staff', body: {'action': action, 'user_id': userId});
@@ -122,7 +150,11 @@ class SupabaseService {
 
   Stream<List<T>> _poll<T>(Future<List<T>> Function() fetch, {Duration interval = const Duration(seconds: 5)}) async* {
     while (true) {
-      yield await fetch();
+      try {
+        yield await fetch().timeout(requestTimeout);
+      } catch (exception) {
+        _connectionFailures.add(exception);
+      }
       await Future<void>.delayed(interval);
     }
   }

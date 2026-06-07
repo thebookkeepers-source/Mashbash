@@ -74,10 +74,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final showingDeals = !isSearching && categoryId == 'deals';
     final filtered = isSearching
         ? <Product>[
-            ...app.products.where((product) => product.available && productMatchesQuery(product, query)),
-            ...app.deals.where((deal) => deal.active && dealMatchesQuery(deal, query)).map((deal) => deal.asProduct()),
+            ...app.products.where((product) => product.customerVisible && productMatchesQuery(product, query)),
+            ...app.deals.where((deal) => deal.customerVisible && dealMatchesQuery(deal, query)).map((deal) => deal.asProduct()),
           ]
-        : app.products.where((product) => product.available && (selected == null || product.categoryId == selected.id)).toList();
+        : app.products.where((product) => product.customerVisible && (selected == null || product.categoryId == selected.id)).toList();
     return Scaffold(
       appBar: AppBar(
         title: const MashLogo(compact: true, onDark: true),
@@ -129,7 +129,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         if (showingDeals)
-          _DealGrid(deals: app.deals.where((deal) => deal.active).toList())
+          _DealGrid(deals: app.deals.where((deal) => deal.customerVisible).toList())
         else if (filtered.isEmpty)
           const SliverToBoxAdapter(child: SizedBox(height: 260, child: EmptyState(icon: Icons.search_off_rounded, title: 'Nothing found', message: 'Try another search phrase.')))
         else
@@ -534,6 +534,22 @@ class OrderTrackingScreen extends StatelessWidget {
                 ]);
               }),
               if (order.status == OrderStatus.cancelled) const MashPanel(color: Color(0xFFFFE3E3), child: Text('This order was cancelled.', style: TextStyle(fontWeight: FontWeight.w900, color: MashColors.primary))),
+              const SizedBox(height: 16),
+              MashPanel(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text('Order items', style: TextStyle(fontWeight: FontWeight.w900)),
+                  ...order.items.map((item) {
+                    final quantity = (item['quantity'] as num? ?? 0).round();
+                    final lineTotal = (item['line_total'] as num?)?.round() ?? (item['price'] as num? ?? 0).round() * quantity;
+                    return ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('$quantity x ${item['name']}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                      trailing: Text(money(lineTotal), style: const TextStyle(fontWeight: FontWeight.w900)),
+                    );
+                  }),
+                ]),
+              ),
               const SizedBox(height: 16),
               MashPanel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('Delivering to', style: TextStyle(fontWeight: FontWeight.w900)), Text(order.address), const Divider(), _TotalRow(label: 'Total', value: order.total, strong: true)])),
             ]),

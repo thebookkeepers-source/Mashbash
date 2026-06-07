@@ -29,9 +29,16 @@ jobs:
           test -f supabase/migrations/20260606110000_initial_schema.sql
           test -f supabase/migrations/20260607120000_production_workflows.sql
           test -f supabase/migrations/20260607160000_delivery_settings.sql
+          test -f supabase/migrations/20260607190000_notifications_and_safe_archives.sql
+          test -f supabase/migrations/20260607193000_notification_security_hardening.sql
+          test -f supabase/migrations/20260607194500_device_token_policy_lockdown.sql
+          test -f supabase/migrations/20260607195500_trigger_function_lockdown.sql
           test -f supabase/functions/create-staff/index.ts
+          test -f supabase/functions/send-notification/index.ts
           test -f lib/screens/rider/rider_panel.dart
-          ! grep -R "package:firebase_" lib pubspec.yaml
+          test -f lib/services/connectivity_service.dart
+          test -f lib/services/notification_service.dart
+          ! grep -R "BEGIN PRIVATE KEY\\|\"private_key\":" lib android supabase/functions README.md
       - name: Verify Supabase build config
         run: |
           test -n "$SUPABASE_URL"

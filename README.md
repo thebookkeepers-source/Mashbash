@@ -23,13 +23,39 @@ supabase db push
 
 The initial schema and production workflow migrations are in `supabase/migrations/`. They create the complete menu, three customer home slides, product-image bucket, rider workflow, secure order RPCs, and Row Level Security policies. Product records include public fallback image URLs, so the menu remains usable before custom images are uploaded.
 
-5. Deploy the owner-only staff provisioning function:
+5. Deploy the owner-only staff provisioning and FCM delivery functions:
 
 ```bash
 supabase functions deploy create-staff
+supabase functions deploy send-notification
 ```
 
 Supabase automatically provides the function with the project URL, anonymous key, and service-role key. Never expose the service-role key to Flutter or commit it.
+
+## Free push notifications with FCM
+
+Supabase remains the only backend, database, and authentication provider. Firebase is used only by the Android client and the `send-notification` Supabase Edge Function for free Firebase Cloud Messaging delivery. The app does not use Firebase Auth, Firestore, or Firebase Storage.
+
+1. Create a Firebase project and register Android application ID `com.mashbash.app`.
+2. Enable the Firebase Cloud Messaging HTTP v1 API.
+3. Create a Firebase service account key. Store these values only as Supabase Edge Function secrets:
+
+```bash
+supabase secrets set --env-file supabase/.env.fcm
+```
+
+`supabase/.env.fcm` must stay uncommitted and contain `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, and `FIREBASE_PRIVATE_KEY`. Never put the service account JSON or private key in Flutter, GitHub Actions, or the repository.
+
+4. Supply the public Android Firebase configuration at build time:
+
+```bash
+--dart-define=FIREBASE_API_KEY=YOUR_PUBLIC_API_KEY \
+--dart-define=FIREBASE_APP_ID=YOUR_ANDROID_APP_ID \
+--dart-define=FIREBASE_MESSAGING_SENDER_ID=YOUR_SENDER_ID \
+--dart-define=FIREBASE_PROJECT_ID=YOUR_FIREBASE_PROJECT_ID
+```
+
+If public Firebase configuration is omitted, Mashbash still builds and runs with notifications disabled. On supported builds the app requests notification permission, stores active FCM tokens in Supabase after login, refreshes them, deactivates them on logout, and opens related order tracking from notification taps.
 
 ## Authentication providers
 
@@ -69,7 +95,10 @@ Counters always receive View Orders, Update Order Status, and Assign Riders righ
 - Ready orders can be assigned only to active, available riders.
 - Dashboard and reports support Today, Yesterday, This Week, This Month, Last Month, and custom date ranges.
 - Reports use live order data for revenue, total/completed/pending/cancelled orders, top items, and category sales.
+- Menu disable/hide is reversible. Archive/delete is always a soft archive, and database triggers block hard deletion of categories, products, and deals.
+- Order items store immutable name, price, quantity, image, category, and line-total snapshots, so archived or edited menu records never change historical orders or reports.
 - Customer home slides can link to products, categories, or deals; linked deals can be added directly to cart.
+- Global connectivity handling retries failed Supabase polling and requests. When no cached live data is available, every role sees a Mashbash-branded `Connection Error` screen with a Retry button; otherwise the current screen remains usable with an offline banner.
 
 ## Run and build
 
@@ -91,7 +120,33 @@ flutter build apk --release \
   --dart-define=SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY
 ```
 
-For release builds, configure a private Android signing key and replace the debug signing configuration in `android/app/build.gradle`.
+## Signed release APK and AAB
+
+Release signing reads private values from ignored `android/key.properties`. Debug builds and CI continue to work when this file is absent.
+
+Generate a private keystore:
+
+```bash
+keytool -genkeypair -v -keystore mashbash-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias mashbash
+```
+
+Keep the `.jks` outside the repository or under an ignored local path. Create ignored `android/key.properties`:
+
+```properties
+storePassword=YOUR_STORE_PASSWORD
+keyPassword=YOUR_KEY_PASSWORD
+keyAlias=mashbash
+storeFile=C:/secure/path/mashbash-release.jks
+```
+
+Build a signed release APK or Play Store AAB:
+
+```bash
+flutter build apk --release --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_PUBLISHABLE_KEY=$SUPABASE_PUBLISHABLE_KEY
+flutter build appbundle --release --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_PUBLISHABLE_KEY=$SUPABASE_PUBLISHABLE_KEY
+```
+
+A signed release APK is optimized, installable as a stable application, and suitable for sharing. Debug APKs are larger, slower, and intended only for testing. Back up the release keystore securely; future updates must use the same key.
 
 ## Quality checks
 
@@ -113,4 +168,6 @@ Add repository Actions secrets named `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KE
 - Counters receive the required order-operation capabilities.
 - Riders can read only orders assigned to them and can use only guarded delivery-status RPC transitions.
 - Product image writes require menu-management permission; public reads use the `product-images` bucket.
+- FCM service-account credentials exist only in Supabase secrets. The JWT-protected notification Edge Function validates the caller and resolves recipients through protected `device_tokens`.
+- Device tokens can be read only by their owning user; registration and deactivation use guarded database functions.
 - Role changes are protected in the database, and passwords are handled only by Supabase Auth.
