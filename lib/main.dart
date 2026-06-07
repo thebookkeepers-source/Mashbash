@@ -9,6 +9,7 @@ import 'screens/counter/counter_panel.dart';
 import 'screens/customer/customer_screens.dart';
 import 'screens/manager/manager_panel.dart';
 import 'screens/owner/admin_screens.dart';
+import 'screens/rider/rider_panel.dart';
 import 'utils/app_theme.dart';
 import 'widgets/mash_widgets.dart';
 
@@ -56,6 +57,7 @@ class AppRouter extends StatelessWidget {
       UserRole.owner => const StaffPanel(role: UserRole.owner),
       UserRole.manager => const ManagerPanel(),
       UserRole.counter => const CounterPanel(),
+      UserRole.rider => const RiderPanel(),
     };
   }
 }

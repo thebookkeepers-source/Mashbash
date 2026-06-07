@@ -10,9 +10,13 @@ String money(num value) => 'Rs. ${value.round()}';
 
 String statusLabel(OrderStatus status) => switch (status) {
       OrderStatus.received => 'Order Received',
-      OrderStatus.processing => 'Processing',
+      OrderStatus.accepted => 'Accepted',
+      OrderStatus.preparing => 'Preparing',
+      OrderStatus.readyForDelivery => 'Ready for Delivery',
+      OrderStatus.assignedToRider => 'Assigned to Rider',
       OrderStatus.outForDelivery => 'Out for Delivery',
-      OrderStatus.delivered => 'Delivered',
+      OrderStatus.delivered => 'Completed',
+      OrderStatus.cancelled => 'Cancelled',
     };
 
 class MashLogo extends StatelessWidget {
@@ -33,7 +37,7 @@ class MashLogo extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('MASHBASH', style: TextStyle(fontSize: compact ? 20 : 30, fontWeight: FontWeight.w900, letterSpacing: 1)),
+              Text('MASHBASH', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontSize: compact ? 20 : 30, color: compact ? Colors.white : MashColors.primary, letterSpacing: 1)),
               Text('Meet.Eat.Repeat', style: TextStyle(fontSize: compact ? 10 : 13, fontWeight: FontWeight.w600, color: MashColors.primary)),
             ],
           ),
@@ -120,14 +124,21 @@ class ErrorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final error = context.watch<AppProvider>().error;
-    if (error == null) return const SizedBox.shrink();
+    final app = context.watch<AppProvider>();
+    final error = app.error;
+    final message = app.message;
+    if (error == null && message == null) return const SizedBox.shrink();
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: const Color(0xFFFFE3E3), borderRadius: BorderRadius.circular(14)),
-      child: Row(children: [const Icon(Icons.error_outline, color: MashColors.primary), const SizedBox(width: 8), Expanded(child: Text(error))]),
+      decoration: BoxDecoration(color: error == null ? const Color(0xFFE2F5E9) : const Color(0xFFFFE3E3), borderRadius: BorderRadius.circular(14)),
+      child: Row(children: [
+        Icon(error == null ? Icons.check_circle_outline : Icons.error_outline, color: error == null ? MashColors.success : MashColors.primary),
+        const SizedBox(width: 8),
+        Expanded(child: Text(error ?? message!)),
+        IconButton(onPressed: app.clearNotice, icon: const Icon(Icons.close, size: 18)),
+      ]),
     );
   }
 }
@@ -140,7 +151,44 @@ class OrderStatusChip extends StatelessWidget {
   Widget build(BuildContext context) => Chip(
         avatar: Icon(status == OrderStatus.delivered ? Icons.check_circle : Icons.timelapse, size: 18, color: status == OrderStatus.delivered ? MashColors.success : MashColors.primary),
         label: Text(statusLabel(status), style: const TextStyle(fontWeight: FontWeight.w700)),
-        backgroundColor: status == OrderStatus.delivered ? const Color(0xFFE2F5E9) : const Color(0xFFFFECE8),
+        backgroundColor: status == OrderStatus.delivered
+            ? const Color(0xFFE2F5E9)
+            : status == OrderStatus.cancelled
+                ? const Color(0xFFFFE3E3)
+                : const Color(0xFFFFECE8),
         side: BorderSide.none,
+      );
+}
+
+class SectionHeading extends StatelessWidget {
+  const SectionHeading(this.title, {super.key, this.action});
+  final String title;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          Expanded(child: Text(title, style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: MashColors.primary))),
+          if (action != null) action!,
+        ],
+      );
+}
+
+class MashPanel extends StatelessWidget {
+  const MashPanel({required this.child, super.key, this.color = Colors.white, this.padding = const EdgeInsets.all(16)});
+  final Widget child;
+  final Color color;
+  final EdgeInsets padding;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: padding,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: MashColors.primary.withValues(alpha: .08)),
+          boxShadow: [BoxShadow(color: MashColors.primary.withValues(alpha: .08), blurRadius: 18, offset: const Offset(0, 7))],
+        ),
+        child: child,
       );
 }

@@ -46,7 +46,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                         ),
                         const Padding(padding: EdgeInsets.symmetric(vertical: 14), child: Row(children: [Expanded(child: Divider()), Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('or')), Expanded(child: Divider())])),
-                        TextFormField(controller: _identifier, keyboardType: TextInputType.emailAddress, validator: Validators.emailOrPhone, decoration: const InputDecoration(labelText: 'Email or phone number', prefixIcon: Icon(Icons.alternate_email_rounded))),
+                        TextFormField(controller: _identifier, keyboardType: TextInputType.emailAddress, validator: Validators.emailOrPhone, decoration: const InputDecoration(labelText: 'Customer email / staff mobile', helperText: 'Customers use email. Staff use mobile number.', prefixIcon: Icon(Icons.alternate_email_rounded))),
                         const SizedBox(height: 12),
                         TextFormField(
                           controller: _password,
@@ -108,10 +108,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
               const SizedBox(height: 12),
               TextFormField(controller: _confirm, obscureText: true, validator: (value) => value != _password.text ? 'Passwords do not match' : null, decoration: const InputDecoration(labelText: 'Confirm password', prefixIcon: Icon(Icons.lock_reset_rounded))),
               const SizedBox(height: 20),
-              AsyncButton(label: 'Create customer account', icon: Icons.person_add_rounded, onPressed: () {
+              AsyncButton(label: 'Create customer account', icon: Icons.person_add_rounded, onPressed: () async {
                 if (_form.currentState!.validate()) {
-                  context.read<AppProvider>().register(email: _email.text, name: _name.text, phone: _phone.text, address: _address.text, password: _password.text);
-                  Navigator.pop(context);
+                  final created = await context.read<AppProvider>().register(email: _email.text, name: _name.text, phone: _phone.text, address: _address.text, password: _password.text);
+                  if (created && context.mounted) Navigator.pop(context);
                 }
               }),
             ]),
