@@ -41,6 +41,27 @@ jobs:
           PY
       - name: Install dependencies
         run: flutter pub get
+      - name: Verify production source
+        run: |
+          echo "Release source commit: $GITHUB_SHA"
+          test "$GITHUB_SHA" = "$(git rev-parse HEAD)"
+          grep -q '^version: 1.0.1+2$' pubspec.yaml
+          grep -q 'static bool get googleSignIn => false;' lib/utils/feature_flags.dart
+          grep -q 'if (FeatureFlags.googleSignIn)' lib/screens/auth/auth_screens.dart
+          ! grep -q 'Customer email / staff mobile\|Customers use email\|Staff accounts are created securely' lib/screens/auth/auth_screens.dart
+          grep -q 'firebase_core:' pubspec.yaml
+          grep -q 'firebase_messaging:' pubspec.yaml
+          grep -q 'flutter_local_notifications:' pubspec.yaml
+          grep -q 'connectivity_plus:' pubspec.yaml
+          grep -q 'flutter_launcher_icons:' pubspec.yaml
+          test -f lib/services/notification_service.dart
+          test -f lib/services/connectivity_service.dart
+          test -f assets/branding/app_icon_source.png
+          test -f assets/branding/app_icon_foreground.png
+          test -f assets/branding/logo.png
+          test -f flutter_launcher_icons.yaml
+      - name: Generate Android launcher icons
+        run: dart run flutter_launcher_icons -f flutter_launcher_icons.yaml
       - name: Prepare release signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

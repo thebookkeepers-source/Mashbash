@@ -1,7 +1,12 @@
+import 'dart:async';
+
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'firebase_options.dart';
 import 'models/app_models.dart';
 import 'providers/app_provider.dart';
 import 'screens/auth/auth_screens.dart';
@@ -10,18 +15,42 @@ import 'screens/customer/customer_screens.dart';
 import 'screens/manager/manager_panel.dart';
 import 'screens/owner/admin_screens.dart';
 import 'screens/rider/rider_panel.dart';
+import 'services/notification_service.dart';
 import 'utils/app_theme.dart';
 import 'widgets/mash_widgets.dart';
 
+final mashNavigatorKey = GlobalKey<NavigatorState>();
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  ErrorWidget.builder = (_) => const Directionality(
+        textDirection: TextDirection.ltr,
+        child: Material(color: MashColors.background, child: Center(child: Padding(padding: EdgeInsets.all(24), child: MashLogo()))),
+      );
   await Supabase.initialize(
     url: const String.fromEnvironment('SUPABASE_URL', defaultValue: 'https://example.supabase.co'),
     anonKey: const String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY', defaultValue: 'sb_publishable_configure_me'),
   );
+  try {
+    if (DefaultFirebaseOptions.isConfigured) {
+      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    } else {
+      await Firebase.initializeApp();
+    }
+  } catch (_) {
+    // FCM setup must never prevent the Supabase-backed app from opening.
+  }
+  if (Firebase.apps.isNotEmpty) {
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  }
   final provider = AppProvider();
-  await provider.initialize();
+  provider.notification.onOrderTap = (orderId) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      mashNavigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => OrderTrackingScreen(orderId: orderId)));
+    });
+  };
   runApp(ChangeNotifierProvider.value(value: provider, child: const MashbashApp()));
+  unawaited(provider.initialize());
 }
 
 class MashbashApp extends StatelessWidget {
@@ -32,6 +61,8 @@ class MashbashApp extends StatelessWidget {
         title: 'Mashbash',
         debugShowCheckedModeBanner: false,
         theme: buildMashTheme(),
+        navigatorKey: mashNavigatorKey,
+        builder: (context, child) => ConnectionGuard(child: child ?? const SizedBox.shrink()),
         home: const AppRouter(),
       );
 }

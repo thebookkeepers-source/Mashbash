@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -24,13 +27,52 @@ jobs:
           rm -f android/settings.gradle.kts android/build.gradle.kts android/app/build.gradle.kts
       - name: Install dependencies
         run: flutter pub get
+      - name: Generate Android launcher icons
+        run: dart run flutter_launcher_icons -f flutter_launcher_icons.yaml
       - name: Verify Supabase migration
         run: |
           test -f supabase/migrations/20260606110000_initial_schema.sql
           test -f supabase/migrations/20260607120000_production_workflows.sql
+          test -f supabase/migrations/20260607160000_delivery_settings.sql
+          test -f supabase/migrations/20260607190000_notifications_and_safe_archives.sql
+          test -f supabase/migrations/20260607193000_notification_security_hardening.sql
+          test -f supabase/migrations/20260607194500_device_token_policy_lockdown.sql
+          test -f supabase/migrations/20260607195500_trigger_function_lockdown.sql
+          test -f supabase/migrations/20260607202000_notification_event_deduplication.sql
+          test -f supabase/migrations/20260607210000_notification_delivery_reliability.sql
+          test -f supabase/migrations/20260607220000_release_security_performance.sql
+          test -f supabase/migrations/20260607221000_rls_policy_performance.sql
           test -f supabase/functions/create-staff/index.ts
+          test -f supabase/functions/send-notification/index.ts
           test -f lib/screens/rider/rider_panel.dart
-          ! grep -R "package:firebase_" lib pubspec.yaml
+          test -f lib/services/connectivity_service.dart
+          test -f lib/services/notification_service.dart
+          test -f android/app/google-services.json
+          test -f android/app/src/main/res/drawable/mashbash_notification.xml
+          test -f assets/branding/app_icon_source.png
+          test -f assets/branding/app_icon_foreground.png
+          test -f assets/branding/logo.png
+          test ! -f assets/branding/app_icon.png
+          test -f flutter_launcher_icons.yaml
+          test -f android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+          test -f android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+          test -f android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+          test -f android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          test -f android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          grep -q 'android:icon="@mipmap/ic_launcher"' android/app/src/main/AndroidManifest.xml
+          grep -q 'android:roundIcon="@mipmap/ic_launcher_round"' android/app/src/main/AndroidManifest.xml
+          grep -q 'id "com.google.gms.google-services" version "4.4.4" apply false' android/settings.gradle
+          grep -q 'id "com.google.gms.google-services"' android/app/build.gradle
+          grep -q 'android.permission.POST_NOTIFICATIONS' android/app/src/main/AndroidManifest.xml
+          grep -q 'mashbash_orders' android/app/src/main/AndroidManifest.xml
+          grep -q 'android:allowBackup="false"' android/app/src/main/AndroidManifest.xml
+          ! grep -q 'REQUEST_INSTALL_PACKAGES\|READ_SMS\|SEND_SMS\|READ_CONTACTS\|ACCESS_FINE_LOCATION\|ACCESS_BACKGROUND_LOCATION\|MANAGE_EXTERNAL_STORAGE\|SYSTEM_ALERT_WINDOW' android/app/src/main/AndroidManifest.xml
+          ! grep -R "Lottie.network\|package:lottie" lib pubspec.yaml
+          test -f .github/workflows/android-release.yml
+          grep -q '^version: 1.0.1+2$' pubspec.yaml
+          grep -q 'static bool get googleSignIn => false;' lib/utils/feature_flags.dart
+          grep -q 'FIREBASE_SERVICE_ACCOUNT_JSON' supabase/functions/send-notification/index.ts
+          ! grep -R "BEGIN PRIVATE KEY\\|\"private_key\":" lib android supabase/functions README.md
       - name: Verify Supabase build config
         run: |
           test -n "$SUPABASE_URL"
@@ -42,6 +84,14 @@ jobs:
       - name: Build Android APK
         run: |
           flutter build apk --debug \
+            --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+            --dart-define=SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
+      - name: Verify release APK and AAB compile
+        run: |
+          flutter build apk --release \
+            --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+            --dart-define=SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
+          flutter build appbundle --release \
             --dart-define=SUPABASE_URL="$SUPABASE_URL" \
             --dart-define=SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
       - name: Upload debug APK
