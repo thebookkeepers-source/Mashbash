@@ -1,8 +1,48 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mashbash/models/app_models.dart';
+import 'package:mashbash/providers/app_provider.dart';
+import 'package:mashbash/services/supabase_service.dart';
+import 'package:mashbash/utils/feature_flags.dart';
 import 'package:mashbash/utils/seed_data.dart';
 
 void main() {
+  test('Mashbash launcher and in-app branding assets are available', () {
+    expect(File('assets/branding/app_icon_source.png').existsSync(), isTrue);
+    expect(File('assets/branding/app_icon_foreground.png').existsSync(), isTrue);
+    expect(File('assets/branding/logo.png').existsSync(), isTrue);
+    expect(File('android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png').existsSync(), isTrue);
+    expect(File('flutter_launcher_icons.yaml').existsSync(), isTrue);
+  });
+
+  test('Android release configuration stays minimal and production-ready', () {
+    final manifest = File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+    final pubspec = File('pubspec.yaml').readAsStringSync();
+    final customerScreens = File('lib/screens/customer/customer_screens.dart').readAsStringSync();
+
+    expect(pubspec, contains('version: 1.0.0+1'));
+    expect(manifest, contains('android:label="Mashbash"'));
+    expect(manifest, contains('android:allowBackup="false"'));
+    expect(manifest, contains('android.permission.INTERNET'));
+    expect(manifest, contains('android.permission.POST_NOTIFICATIONS'));
+    for (final permission in ['REQUEST_INSTALL_PACKAGES', 'READ_SMS', 'SEND_SMS', 'READ_CONTACTS', 'ACCESS_FINE_LOCATION', 'ACCESS_BACKGROUND_LOCATION', 'MANAGE_EXTERNAL_STORAGE', 'SYSTEM_ALERT_WINDOW']) {
+      expect(manifest, isNot(contains(permission)));
+    }
+    expect(pubspec, isNot(contains('lottie:')));
+    expect(customerScreens, isNot(contains('Lottie.network')));
+    expect(File('.github/workflows/release.yml').existsSync(), isTrue);
+  });
+
+  test('Google login remains hidden until OAuth setup is enabled', () {
+    final authScreen = File('lib/screens/auth/auth_screens.dart').readAsStringSync();
+    final authService = File('lib/services/auth_service.dart').readAsStringSync();
+
+    expect(FeatureFlags.googleSignIn, isFalse);
+    expect(authScreen, contains('FeatureFlags.googleSignIn'));
+    expect(authService, contains('signInWithGoogle'));
+  });
+
   test('seed menu contains every Mashbash category and correct totals', () {
     expect(mashMenu.length, 19);
     expect(mashCategories.every((category) => mashMenu.any((product) => product.category == category)), isTrue);
@@ -76,5 +116,58 @@ void main() {
     expect(productMatchesQuery(product, 'chicken patty'), isTrue);
     expect(dealMatchesQuery(deal, 'lunch'), isTrue);
     expect(dealMatchesQuery(deal, 'masti'), isTrue);
+  });
+
+  test('disabled and archived menu records are hidden without losing owner models', () {
+    final archived = DateTime(2026, 6, 7);
+    final category = MenuCategory.fromMap({'id': 'cat', 'name': 'Beefbash', 'active': true, 'archived_at': archived.toIso8601String()});
+    final product = Product.fromMap({
+      'id': 'burger',
+      'name': 'Burger',
+      'price': 500,
+      'available': true,
+      'categories': {'name': 'Beefbash', 'active': false},
+    });
+    final deal = Deal.fromMap({'id': 'deal', 'name': 'Deal', 'original_price': 600, 'deal_price': 500, 'active': false});
+
+    expect(category.archived, isTrue);
+    expect(category.customerVisible, isFalse);
+    expect(product.customerVisible, isFalse);
+    expect(deal.customerVisible, isFalse);
+  });
+
+  test('order item snapshot remains readable without current menu records', () {
+    final order = MashOrder.fromMap({
+      'id': 'order-1',
+      'customer_id': 'customer-1',
+      'customer_name': 'Customer',
+      'order_items': [
+        {'product_id': null, 'name': 'Archived Burger', 'price': 550, 'quantity': 2, 'line_total': 1100, 'category_name': 'Beefbash'}
+      ],
+      'subtotal': 1100,
+      'delivery_fee': 120,
+      'status': 'delivered',
+      'created_at': '2026-06-07T00:00:00Z',
+    });
+
+    expect(order.items.single['name'], 'Archived Burger');
+    expect(order.items.single['line_total'], 1100);
+    expect(order.total, 1220);
+  });
+
+  test('connection failures never expose raw exception text', () {
+    expect(friendlyError(SocketException('failed host lookup')), contains('error connecting to the server'));
+    expect(friendlyError(const NotificationDeliveryException('Notification delivery is temporarily unavailable. Please try again.')), 'Notification delivery is temporarily unavailable. Please try again.');
+    expect(friendlyError(Exception('secret database detail')), 'Something went wrong. Please try again.');
+  });
+
+  test('notification preferences default on and map to Supabase settings', () {
+    const defaults = RestaurantSettings();
+    final mapped = RestaurantSettings.fromMap({'delivery_fee': 150});
+
+    expect(defaults.newOrderNotifications, isTrue);
+    expect(defaults.orderStatusNotifications, isTrue);
+    expect(mapped.orderStatusNotifications, isTrue);
+    expect(defaults.toMap()['order_status_notifications'], isTrue);
   });
 }

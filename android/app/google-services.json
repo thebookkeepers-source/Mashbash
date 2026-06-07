@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "16328445473",
+    "project_id": "mashbash-1",
+    "storage_bucket": "mashbash-1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:16328445473:android:e725e277940743393f1d60",
+        "android_client_info": {
+          "package_name": "com.mashbash.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDLM22_su4_SvZzEactd-XQfWPVga-aOW0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

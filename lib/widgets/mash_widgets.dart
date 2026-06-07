@@ -49,20 +49,14 @@ class MashMark extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => SizedBox(
         width: size,
         height: size,
-        padding: EdgeInsets.all(size * .09),
-        decoration: BoxDecoration(color: MashColors.primary, borderRadius: BorderRadius.circular(size * .23)),
-        child: Container(
-          decoration: BoxDecoration(color: MashColors.background, shape: BoxShape.circle, border: Border.all(color: MashColors.secondary, width: size * .045)),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Text('M', style: TextStyle(color: MashColors.primary, fontSize: size * .48, fontWeight: FontWeight.w900, fontStyle: FontStyle.italic, height: 1)),
-              Positioned(right: size * .12, bottom: size * .15, child: Icon(Icons.local_fire_department_rounded, color: Colors.orange, size: size * .25)),
-            ],
-          ),
+        child: Image.asset(
+          'assets/branding/logo.png',
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+          semanticLabel: 'Mashbash logo',
         ),
       );
 }
@@ -75,7 +69,7 @@ class AsyncButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final busy = context.watch<AppProvider>().busy;
+    final busy = context.select<AppProvider, bool>((app) => app.busy);
     return ElevatedButton.icon(
       onPressed: busy ? null : onPressed,
       icon: busy
@@ -111,6 +105,8 @@ class ProductImage extends StatelessWidget {
                 height: height,
                 width: double.infinity,
                 fit: BoxFit.cover,
+                maxWidthDiskCache: 960,
+                maxHeightDiskCache: 960,
                 placeholder: (_, __) => Container(height: height, color: const Color(0xFFFFE0B2)),
                 errorWidget: (_, __, ___) => Container(height: height, color: const Color(0xFFFFE0B2), child: const Icon(Icons.lunch_dining_rounded)),
               ),
@@ -149,9 +145,9 @@ class ErrorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final app = context.watch<AppProvider>();
-    final error = app.error;
-    final message = app.message;
+    final notice = context.select<AppProvider, ({String? error, String? message})>((app) => (error: app.error, message: app.message));
+    final error = notice.error;
+    final message = notice.message;
     if (error == null && message == null) return const SizedBox.shrink();
     return Container(
       width: double.infinity,
@@ -162,7 +158,7 @@ class ErrorBanner extends StatelessWidget {
         Icon(error == null ? Icons.check_circle_outline : Icons.error_outline, color: error == null ? MashColors.success : MashColors.primary),
         const SizedBox(width: 8),
         Expanded(child: Text(error ?? message!)),
-        IconButton(onPressed: app.clearNotice, icon: const Icon(Icons.close, size: 18)),
+        IconButton(onPressed: context.read<AppProvider>().clearNotice, icon: const Icon(Icons.close, size: 18)),
       ]),
     );
   }
@@ -216,4 +212,83 @@ class MashPanel extends StatelessWidget {
         ),
         child: child,
       );
+}
+
+class ConnectionGuard extends StatelessWidget {
+  const ConnectionGuard({required this.child, super.key});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = context.select<AppProvider, ({bool error, bool usable})>((app) => (error: app.connectionError, usable: app.hasUsableData));
+    if (status.error && !status.usable) return const ConnectionErrorScreen();
+    return Stack(children: [
+      child,
+      if (status.error)
+        Positioned(
+          top: MediaQuery.paddingOf(context).top + 6,
+          left: 12,
+          right: 12,
+          child: const Material(color: Colors.transparent, child: OfflineBanner()),
+        ),
+    ]);
+  }
+}
+
+class ConnectionErrorScreen extends StatelessWidget {
+  const ConnectionErrorScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppProvider>();
+    return Material(
+      color: MashColors.background,
+      child: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(28),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const MashLogo(),
+              const SizedBox(height: 28),
+              const Icon(Icons.cloud_off_rounded, size: 76, color: MashColors.primary),
+              const SizedBox(height: 14),
+              Text('Connection Error', style: Theme.of(context).textTheme.headlineMedium?.copyWith(color: MashColors.primary)),
+              const SizedBox(height: 8),
+              const Text(
+                'There is an error connecting to the server. Please check your internet connection and try again.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 22),
+              ElevatedButton.icon(
+                onPressed: app.retryingConnection ? null : app.retryConnection,
+                icon: app.retryingConnection
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.refresh_rounded),
+                label: Text(app.retryingConnection ? 'Checking connection' : 'Retry'),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class OfflineBanner extends StatelessWidget {
+  const OfflineBanner({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppProvider>();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(color: MashColors.secondary, borderRadius: BorderRadius.circular(16), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)]),
+      child: Row(children: [
+        const MashMark(size: 30),
+        const SizedBox(width: 9),
+        const Expanded(child: Text('Offline mode. Some information may be out of date.', style: TextStyle(color: MashColors.primary, fontWeight: FontWeight.w800))),
+        TextButton(onPressed: app.retryingConnection ? null : app.retryConnection, child: const Text('Retry')),
+      ]),
+    );
+  }
 }

@@ -2,3 +2,6 @@ project_id = "mashbash"
 
 [functions.create-staff]
 verify_jwt = true
+
+[functions.send-notification]
+verify_jwt = true
