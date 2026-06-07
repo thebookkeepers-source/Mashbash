@@ -46,16 +46,9 @@ supabase secrets set --env-file supabase/.env.fcm
 
 `supabase/.env.fcm` must stay uncommitted and contain `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, and `FIREBASE_PRIVATE_KEY`. Never put the service account JSON or private key in Flutter, GitHub Actions, or the repository.
 
-4. Supply the public Android Firebase configuration at build time:
+4. Download the Android `google-services.json` for application ID `com.mashbash.app` and place it at `android/app/google-services.json`. The Google Services Gradle plugin supplies the public Android Firebase configuration to the app.
 
-```bash
---dart-define=FIREBASE_API_KEY=YOUR_PUBLIC_API_KEY \
---dart-define=FIREBASE_APP_ID=YOUR_ANDROID_APP_ID \
---dart-define=FIREBASE_MESSAGING_SENDER_ID=YOUR_SENDER_ID \
---dart-define=FIREBASE_PROJECT_ID=YOUR_FIREBASE_PROJECT_ID
-```
-
-If public Firebase configuration is omitted, Mashbash still builds and runs with notifications disabled. On supported builds the app requests notification permission, stores active FCM tokens in Supabase after login, refreshes them, deactivates them on logout, and opens related order tracking from notification taps.
+On supported builds the app requests notification permission, stores active FCM tokens in Supabase after login, refreshes them, deactivates them on logout, and opens related order tracking from notification taps. Firebase service-account secrets are still required in Supabase before the Edge Function can deliver pushes.
 
 ## Authentication providers
 

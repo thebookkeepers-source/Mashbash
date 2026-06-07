@@ -12,6 +12,8 @@ import 'supabase_service.dart';
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   if (DefaultFirebaseOptions.isConfigured) {
     await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  } else {
+    await Firebase.initializeApp();
   }
 }
 
@@ -25,7 +27,7 @@ class NotificationService {
   void Function(String orderId)? onOrderTap;
 
   Future<void> initialize() async {
-    if (!DefaultFirebaseOptions.isConfigured) return;
+    if (Firebase.apps.isEmpty) return;
     try {
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
       final messaging = FirebaseMessaging.instance;
@@ -43,7 +45,7 @@ class NotificationService {
   }
 
   Future<void> activate(AppUser user) async {
-    if (!DefaultFirebaseOptions.isConfigured) return;
+    if (Firebase.apps.isEmpty) return;
     try {
       final settings = await FirebaseMessaging.instance.requestPermission(alert: true, badge: true, sound: true);
       if (settings.authorizationStatus == AuthorizationStatus.denied) return;

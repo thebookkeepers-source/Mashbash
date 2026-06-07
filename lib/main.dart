@@ -29,12 +29,14 @@ Future<void> main() async {
     url: const String.fromEnvironment('SUPABASE_URL', defaultValue: 'https://example.supabase.co'),
     anonKey: const String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY', defaultValue: 'sb_publishable_configure_me'),
   );
-  if (DefaultFirebaseOptions.isConfigured) {
-    try {
+  try {
+    if (DefaultFirebaseOptions.isConfigured) {
       await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-    } catch (_) {
-      // FCM setup must never prevent the Supabase-backed app from opening.
+    } else {
+      await Firebase.initializeApp();
     }
+  } catch (_) {
+    // FCM setup must never prevent the Supabase-backed app from opening.
   }
   final provider = AppProvider();
   provider.notification.onOrderTap = (orderId) {
